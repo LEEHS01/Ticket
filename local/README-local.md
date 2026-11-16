@@ -17,9 +17,12 @@ Docker의 게이트웨이(nginx) 역할은 Vite 개발 서버가 대신한다(`/
 # JDK 21과 Redis 설치
 sudo apt update && sudo apt install -y openjdk-21-jdk-headless redis-server
 
-# MySQL을 켜고 DB와 계정 만들기 (기존 DB는 건드리지 않는다)
+# 비밀번호 파일 만들기 (저장소 루트에서. .env 는 저장소에 올리지 않는다)
+cp .env.example .env     # DB_OWNER_PASSWORD, DB_APP_PASSWORD 를 채운다. 예: openssl rand -hex 16
+
+# MySQL을 켜고 DB와 계정 만들기 (.env 의 비밀번호를 쓴다. 기존 DB의 데이터는 건드리지 않는다)
 sudo service mysql start
-sudo mysql < ~/ticketing/local/01-init-db.sql    # 소스를 받은 위치에 맞게 경로를 바꾼다
+bash local/init-db.sh
 ```
 
 ## 매번 실행할 때
@@ -54,7 +57,7 @@ powershell -ExecutionPolicy Bypass -File .\local\stop-local.ps1
 | `run-local.ps1` | 전체 실행(Windows에서 실행). 백엔드는 WSL의 `run-backend.sh`를 부른다 |
 | `run-backend.sh` | WSL에서 백엔드 실행. 직접 실행해도 된다: `bash local/run-backend.sh` |
 | `stop-local.ps1` | 종료 |
-| `01-init-db.sql` | DB와 계정 생성(처음 한 번) |
+| `init-db.sh` | DB와 계정 생성(처음 한 번). 비밀번호는 루트의 `.env`에서 읽는다 |
 | `.run/` | 실행 로그(`backend.log`, `frontend.log`)와 프로세스 번호 |
 
 ## 알아둘 점

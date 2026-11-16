@@ -38,8 +38,9 @@
 docker compose -f docker-compose.dev.yml up -d --wait
 ```
 
-- MySQL 8.4, Redis 7. 둘 다 healthcheck가 통과해야 `--wait`가 끝납니다. 비밀번호는 전부 **개발용 가짜 값**입니다.
-- 처음 볼륨이 만들어질 때 `docker/mysql-init/01-init.sql`이 **앱 전용 최소 권한 계정**(`ticketing_app`)과 테스트 DB(`ticketing_test`)를 만듭니다.
+- 먼저 `cp .env.example .env` 후 비밀번호 칸(`MYSQL_ROOT_PASSWORD`, `DB_OWNER_PASSWORD`, `DB_APP_PASSWORD`, `DB_PASSWORD`, `REDIS_PASSWORD`)을 채웁니다. `DB_PASSWORD`는 `DB_APP_PASSWORD`와 같은 값입니다. 저장소에는 비밀번호를 두지 않습니다.
+- MySQL 8.4, Redis 7. 둘 다 healthcheck가 통과해야 `--wait`가 끝납니다.
+- 처음 볼륨이 만들어질 때 `docker/mysql-init/01-init.sh`가 **앱 전용 최소 권한 계정**(`ticketing_app`)과 테스트 DB(`ticketing_test`)를 만듭니다.
 
 ### 1-2. 이미지 빌드
 
@@ -54,7 +55,7 @@ DDL 권한이 있는 소유자 계정(`ticketing`)으로 실행합니다. 여러
 
 ```powershell
 docker run --rm --read-only --tmpfs /tmp --network tkbe-dev_default `
-  --env-file .env.example -e DB_USER=ticketing -e DB_PASSWORD=dev-only-migrate-pw `
+  --env-file .env -e DB_USER=ticketing -e DB_PASSWORD=<.env의 DB_OWNER_PASSWORD> `
   -e SEED_DEMO_EMAIL=demo@example.com -e SEED_DEMO_PASSWORD=<시연용 비밀번호 8자 이상> `
   ticketing-backend migrate
 ```
@@ -167,8 +168,8 @@ docker compose -f docker-compose.dev.yml down      # 데이터 볼륨까지 지�
 ```powershell
 # 1-1로 MySQL·Redis를 먼저 띄운 뒤 (Maven 캐시는 named volume ticketing-m2에 보관)
 docker run --rm -v "${PWD}:/src" -v ticketing-m2:/root/.m2 -w /src --network tkbe-dev_default `
-  -e DB_HOST=mysql -e DB_NAME=ticketing_test -e DB_USER=ticketing -e DB_PASSWORD=dev-only-migrate-pw `
-  -e REDIS_HOST=redis -e REDIS_PASSWORD=dev-only-redis-pw -e REDIS_DATABASE=1 `
+  -e DB_HOST=mysql -e DB_NAME=ticketing_test -e DB_USER=ticketing -e DB_PASSWORD=<.env의 DB_OWNER_PASSWORD> `
+  -e REDIS_HOST=redis -e REDIS_PASSWORD=<.env의 REDIS_PASSWORD> -e REDIS_DATABASE=1 `
   maven:3.9-eclipse-temurin-21 ./mvnw -B verify
 
 # DB 없이 단위 테스트만

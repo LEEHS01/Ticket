@@ -19,9 +19,15 @@ port_open 6379 || fail "Redis(6379)가 꺼져 있습니다:  sudo service redis-
 port_open 3306 || fail "MySQL(3306)이 꺼져 있습니다:  sudo service mysql start"
 port_open 18080 && fail "18080 포트가 이미 쓰이고 있습니다. 먼저 종료하세요:  pkill -f target/app.jar"
 
-# 공통 환경변수 (로컬 개발용 가짜 값)
+# DB 비밀번호는 저장소 루트의 .env 에서 읽는다(저장소에는 올리지 않는다).
+[ -f "$ROOT/.env" ] || fail ".env 가 없습니다:  cp .env.example .env 후 값을 채우고  bash local/init-db.sh"
+set -a; . "$ROOT/.env"; set +a
+[ -n "${DB_OWNER_PASSWORD:-}" ] && [ -n "${DB_APP_PASSWORD:-}" ] || fail ".env 에 DB_OWNER_PASSWORD, DB_APP_PASSWORD 를 채우세요"
+
+# 공통 환경변수. WSL의 Redis는 비밀번호 없이 127.0.0.1에서만 열려 있으므로 REDIS_PASSWORD는 넘기지 않는다.
+unset REDIS_PASSWORD MYSQL_ROOT_PASSWORD
 export DB_HOST=127.0.0.1 DB_PORT=3306 DB_NAME=ticketing
-export REDIS_HOST=127.0.0.1 REDIS_PORT=6379 REDIS_PASSWORD="${REDIS_PASSWORD:-}"
+export REDIS_HOST=127.0.0.1 REDIS_PORT=6379
 export SESSION_COOKIE_SECURE=false      # 로컬은 http
 export SERVER_PORT=18080                # 8080은 다른 서버가 사용 중
 
@@ -32,10 +38,11 @@ if [ ! -f "$JAR" ] || [ -n "$(find "$BACKEND/src" "$BACKEND/pom.xml" -newer "$JA
 fi
 
 echo "DB 마이그레이션과 시드를 실행합니다..."
-DB_USER=ticketing DB_PASSWORD=dev-only-migrate-pw java -jar "$JAR" migrate \
-  || fail "마이그레이션에 실패했습니다. 처음이라면 DB와 계정을 만들었는지 확인:  sudo mysql < local/01-init-db.sql"
+DB_USER=ticketing DB_PASSWORD="$DB_OWNER_PASSWORD" java -jar "$JAR" migrate \
+  || fail "마이그레이션에 실패했습니다. 처음이라면 DB와 계정을 만들었는지 확인:  bash local/init-db.sh"
 
 echo "백엔드를 시작합니다: http://localhost:18080"
-export DB_USER=ticketing_app DB_PASSWORD=dev-only-app-pw
+export DB_USER=ticketing_app DB_PASSWORD="$DB_APP_PASSWORD"
+unset DB_OWNER_PASSWORD DB_APP_PASSWORD
 # IPv4로만 열어야 Windows에서 127.0.0.1:18080으로 접속된다(IPv6로 열리면 WSL이 [::1]로만 중계한다).
 exec java -Djava.net.preferIPv4Stack=true -XX:MaxRAMPercentage=50.0 -jar "$JAR"
