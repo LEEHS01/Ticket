@@ -1,0 +1,735 @@
+<title>미리내 마당 아키텍처</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap">
+<style>
+/* Layout: 한 줄 세로 흐름. 그림마다 번호·제목·그림·설명·근거 파일. 잉크와 종이 톤은 프론트엔드 디자인(잉크 남색, 리소 블루)을 따른다. */
+:root {
+  --bg: #EEF0F4;
+  --surface: #FFFFFF;
+  --node: #F6F7FA;
+  --ink: #1D2A4D;
+  --muted: #5B6585;
+  --line: #A9B1C7;
+  --accent: #2F4FD8;
+  --redis: #B8234F;
+  --redis-bg: #FCEBF0;
+  --mysql: #0D7560;
+  --mysql-bg: #E2F3EE;
+  --plan: #9A6200;
+  --plan-bg: #FFF4DC;
+  --zone-bg: #F3F1FA;
+  --sans: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10151F; --surface: #171E2C; --node: #1E2738; --ink: #E3E8F5; --muted: #9AA6C6; --line: #4A5675;
+    --accent: #8FA3FF; --redis: #FF7FA3; --redis-bg: #3A1826; --mysql: #4FD1AD; --mysql-bg: #10322A;
+    --plan: #F0B84E; --plan-bg: #352710; --zone-bg: #1C1D33; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10151F; --surface: #171E2C; --node: #1E2738; --ink: #E3E8F5; --muted: #9AA6C6; --line: #4A5675;
+  --accent: #8FA3FF; --redis: #FF7FA3; --redis-bg: #3A1826; --mysql: #4FD1AD; --mysql-bg: #10322A;
+  --plan: #F0B84E; --plan-bg: #352710; --zone-bg: #1C1D33; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.65; }
+.wrap { max-width: 1060px; margin: 0 auto; padding-block: 40px 72px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 40px; }
+header { display: grid; gap: 12px; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .06em; color: var(--muted); text-transform: uppercase; }
+h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.2; margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+.lede { margin: 0; max-width: 66ch; font-size: 16px; }
+.meta { margin: 0; color: var(--muted); font-size: 13px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: var(--muted); padding: 0; margin: 4px 0 0; list-style: none; }
+.legend li { display: flex; align-items: center; gap: 8px; }
+.sw { width: 22px; height: 14px; border-radius: 3px; border: 1.5px solid; flex: none; }
+.sw.r { background: var(--redis-bg); border-color: var(--redis); }
+.sw.m { background: var(--mysql-bg); border-color: var(--mysql); }
+.sw.p { background: var(--plan-bg); border-color: var(--plan); border-style: dashed; }
+.sw.a { background: var(--node); border-color: var(--accent); }
+nav ol { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; counter-reset: n; }
+nav a { display: inline-block; padding: 4px 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink); text-decoration: none; font-size: 13px; background: var(--surface); }
+nav a:hover, nav a:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+section { display: grid; gap: 14px; scroll-margin-top: 16px; }
+.num { font-family: var(--mono); font-size: 12px; color: var(--accent); letter-spacing: .05em; }
+h2 { font-size: 22px; line-height: 1.3; margin: 0; text-wrap: balance; }
+.plan-tag { display: inline-block; vertical-align: middle; margin-left: 8px; padding: 1px 10px; font-size: 12px; font-weight: 700; color: var(--plan); background: var(--plan-bg); border: 1.5px dashed var(--plan); border-radius: 4px; }
+figure { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.scroll { overflow-x: auto; padding: 16px; }
+.scroll + .scroll { border-top: 1px solid var(--line); }
+figcaption { padding: 14px 18px 16px; border-top: 1px solid var(--line); font-size: 14px; max-width: 80ch; }
+figcaption p { margin: 0; }
+.src { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+code, .src code { font-family: var(--mono); font-size: .92em; }
+.notes { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px 22px; }
+.notes h2 { font-size: 18px; }
+.notes ul { margin: 10px 0 0; padding-left: 20px; display: grid; gap: 6px; font-size: 14px; }
+
+/* SVG */
+svg.d { display: block; width: 100%; height: auto; min-width: 700px; }
+svg.d.wide { min-width: 820px; }
+.d text { font-family: var(--sans); fill: var(--ink); font-size: 12px; }
+.d .tt { font-weight: 700; font-size: 13px; }
+.d .ts { fill: var(--muted); font-size: 11px; }
+.d .mono { font-family: var(--mono); font-size: 10.5px; }
+.d .c { text-anchor: middle; }
+.d .end { text-anchor: end; }
+.d .halo { paint-order: stroke; stroke: var(--surface); stroke-width: 5px; stroke-linejoin: round; }
+.d .tr { fill: var(--redis); } .d .tm { fill: var(--mysql); } .d .tp { fill: var(--plan); } .d .ta { fill: var(--accent); }
+.d .strike { text-decoration: line-through; }
+.n { fill: var(--node); stroke: var(--line); stroke-width: 1.2; }
+.nr { fill: var(--redis-bg); stroke: var(--redis); stroke-width: 1.4; }
+.nm { fill: var(--mysql-bg); stroke: var(--mysql); stroke-width: 1.4; }
+.np { fill: var(--plan-bg); stroke: var(--plan); stroke-width: 1.4; stroke-dasharray: 6 4; }
+.na { fill: var(--node); stroke: var(--accent); stroke-width: 1.6; }
+.ng { fill: var(--surface); stroke: var(--accent); stroke-width: 1.4; }
+.nd { fill: none; stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 4 4; }
+.panel { fill: none; stroke: var(--line); stroke-width: 1; }
+.ze { fill: none; stroke: var(--muted); stroke-width: 1.3; stroke-dasharray: 9 5; }
+.zd { fill: var(--zone-bg); stroke: var(--muted); stroke-width: 1.6; }
+.l { stroke: var(--ink); stroke-width: 1.5; fill: none; }
+.lr { stroke: var(--redis); stroke-width: 1.6; fill: none; }
+.lm { stroke: var(--mysql); stroke-width: 1.6; fill: none; }
+.la { stroke: var(--accent); stroke-width: 1.6; fill: none; }
+.lp { stroke: var(--plan); stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+.lret { stroke: var(--muted); stroke-width: 1.3; fill: none; stroke-dasharray: 5 4; }
+.lfade { stroke: var(--line); stroke-width: 1.3; fill: none; stroke-dasharray: 4 4; }
+.ll { stroke: var(--line); stroke-width: 1.2; stroke-dasharray: 3 4; }
+.sep { stroke: var(--line); stroke-width: 1; }
+.grid { stroke: var(--line); stroke-width: .8; stroke-dasharray: 2 4; }
+.xmark { stroke: var(--redis); stroke-width: 2.2; }
+.bar-r { stroke: var(--redis); stroke-width: 6; stroke-linecap: round; }
+.bar-rl { stroke: var(--redis); stroke-width: 6; stroke-linecap: round; stroke-dasharray: 2 6; }
+.dot-r { fill: var(--redis); } .dot-ro { fill: var(--surface); stroke: var(--redis); stroke-width: 2; }
+.bar { fill: var(--line); } .bar-a { fill: var(--accent); }
+.rng { fill: var(--muted); } .rng-a { fill: var(--accent); }
+.mk { fill: var(--ink); } .mkr { fill: var(--redis); } .mkm { fill: var(--mysql); } .mkp { fill: var(--plan); } .mku { fill: var(--muted); } .mka { fill: var(--accent); } .mkf { fill: var(--line); }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+@media (max-width: 560px) { .scroll { padding: 10px; } figcaption { padding: 12px 14px 14px; } }
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">개인 프로젝트 · 티켓 예매 서비스</div>
+  <h1>미리내 마당 아키텍처</h1>
+  <p class="lede">티켓 예매 서비스 ‘미리내 마당’이 지금 docker-compose로 어떻게 돌고 있는지, 그리고 EKS에서는 무엇으로 바뀔 계획인지를 그림 여섯 장으로 정리한 페이지입니다.</p>
+  <p class="meta">기준: <code>docs/ARCHITECTURE.md</code> v3, <code>docker-compose.yml</code>, <code>gateway/nginx.conf</code>, 백엔드·프론트엔드 README와 Dockerfile · 2026-11-13 정리</p>
+  <ul class="legend" aria-label="범례">
+    <li><span class="sw r"></span>Redis가 맡는 일</li>
+    <li><span class="sw m"></span>MySQL이 맡는 일</li>
+    <li><span class="sw p"></span>계획 (아직 만들지 않음)</li>
+    <li><span class="sw a"></span>강조: 복제본 / 최종 결과</li>
+  </ul>
+  <nav aria-label="그림 목록"><ol>
+    <li><a href="#local">1 전체 구성 (로컬)</a></li>
+    <li><a href="#eks">2 EKS 대응 (계획)</a></li>
+    <li><a href="#booking">3 예매 흐름</a></li>
+    <li><a href="#session">4 세션을 Redis에</a></li>
+    <li><a href="#data">5 데이터 역할 분담</a></li>
+    <li><a href="#build">6 이미지 빌드</a></li>
+  </ol></nav>
+</header>
+
+<!-- ============ 1. 전체 구성 ============ -->
+<section id="local">
+  <div class="num">그림 1</div>
+  <h2>전체 구성: 지금 로컬 docker-compose에서 도는 모습</h2>
+  <figure>
+    <div class="scroll">
+    <svg class="d" viewBox="0 0 960 580" role="img" aria-label="브라우저가 127.0.0.1:8088로 gateway에 들어오고, gateway가 / 는 frontend로, /api/* 는 복제본 2개인 backend로 보낸다. backend만 edge와 data 두 네트워크에 연결되고, mysql·redis·migrate는 외부와 끊긴 data 네트워크에만 있다.">
+      <defs>
+        <marker id="f1k" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker>
+        <marker id="f1r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkr"/></marker>
+        <marker id="f1m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkm"/></marker>
+      </defs>
+      <!-- zones -->
+      <rect x="196" y="236" width="748" height="300" rx="14" class="zd"/>
+      <rect x="196" y="20" width="748" height="262" rx="14" class="ze"/>
+      <text x="214" y="44" class="tt">edge 네트워크</text>
+      <text x="330" y="44" class="ts">gateway · frontend · backend</text>
+      <text x="214" y="520" class="tt">data 네트워크 (internal: true)</text>
+      <text x="926" y="520" class="ts end">외부 · gateway · frontend에서 닿지 않음 (운영의 프라이빗 서브넷 역할)</text>
+
+      <!-- browser -->
+      <rect x="16" y="82" width="128" height="56" rx="8" class="n"/>
+      <text x="80" y="106" class="tt c">브라우저</text>
+      <text x="80" y="124" class="ts c">이 PC에서만 접속</text>
+      <line x1="144" y1="110" x2="232" y2="110" class="l" marker-end="url(#f1k)"/>
+      <text x="189" y="101" class="mono c">8088 → 8080</text>
+
+      <!-- gateway -->
+      <rect x="236" y="78" width="200" height="64" rx="8" class="n"/>
+      <text x="336" y="103" class="tt c">gateway</text>
+      <text x="336" y="122" class="mono c ts">nginx-unprivileged · :8080</text>
+
+      <!-- frontend -->
+      <rect x="560" y="50" width="200" height="64" rx="8" class="n"/>
+      <text x="660" y="75" class="tt c">frontend</text>
+      <text x="660" y="94" class="ts c">nginx · 정적 파일 · :8080</text>
+      <path d="M436,96 H498 V82 H556" class="l" marker-end="url(#f1k)"/>
+      <text x="470" y="88" class="mono c">/</text>
+
+      <!-- backend group -->
+      <rect x="520" y="160" width="400" height="116" rx="10" class="ng"/>
+      <text x="536" y="182" class="tt ta">backend · replicas: 2</text>
+      <text x="904" y="182" class="ts end">mem_limit 512m · /readyz 헬스체크</text>
+      <rect x="540" y="198" width="170" height="60" rx="8" class="n"/>
+      <text x="625" y="222" class="tt c">backend #1</text>
+      <text x="625" y="240" class="ts c">Spring Boot · :8080</text>
+      <rect x="730" y="198" width="170" height="60" rx="8" class="n"/>
+      <text x="815" y="222" class="tt c">backend #2</text>
+      <text x="815" y="240" class="ts c">Spring Boot · :8080</text>
+      <path d="M336,142 V228 H516" class="l" marker-end="url(#f1k)"/>
+      <text x="346" y="192" class="mono">/api/*</text>
+      <text x="346" y="208" class="ts">X-Forwarded-For를 실제 IP로 덮어씀</text>
+      <text x="930" y="300" class="ts end ta">backend만 두 네트워크에 모두 연결</text>
+
+      <!-- data -->
+      <rect x="236" y="340" width="200" height="72" rx="8" class="n"/>
+      <text x="336" y="364" class="tt c">migrate</text>
+      <text x="336" y="382" class="ts c">backend 이미지 + migrate 인자</text>
+      <text x="336" y="399" class="ts c">스키마·시드 후 종료</text>
+      <text x="336" y="436" class="ts c">mysql 정상 → migrate 완료 → backend 시작</text>
+
+      <rect x="540" y="340" width="170" height="72" rx="8" class="nm"/>
+      <text x="625" y="364" class="tt c">mysql 8.4</text>
+      <text x="625" y="382" class="ts c">:3306 · 볼륨 mysql-data</text>
+      <text x="625" y="399" class="ts c">utf8mb4 · 시간대 UTC</text>
+
+      <rect x="730" y="340" width="170" height="72" rx="8" class="nr"/>
+      <text x="815" y="364" class="tt c">redis 7-alpine</text>
+      <text x="815" y="382" class="ts c">:6379 · 비밀번호 인증</text>
+      <text x="815" y="399" class="ts c">appendonly no</text>
+
+      <line x1="436" y1="376" x2="536" y2="376" class="lm" marker-end="url(#f1m)"/>
+      <text x="486" y="368" class="ts c tm">DDL 소유자 계정</text>
+      <text x="486" y="392" class="ts c tm">Flyway</text>
+      <line x1="625" y1="276" x2="625" y2="336" class="lm" marker-end="url(#f1m)"/>
+      <text x="633" y="304" class="ts tm halo">ticketing_app 계정</text>
+      <text x="633" y="320" class="mono tm halo">SELECT/INSERT/UPDATE</text>
+      <line x1="815" y1="276" x2="815" y2="336" class="lr" marker-end="url(#f1r)"/>
+      <text x="823" y="304" class="ts tr halo">세션·대기열·선점</text>
+      <text x="823" y="320" class="ts tr halo">Lua 스크립트</text>
+
+      <text x="196" y="566" class="ts">gateway · frontend · backend · migrate 공통: 읽기 전용 루트 FS · tmpfs /tmp · cap_drop ALL · no-new-privileges</text>
+    </svg>
+    </div>
+    <figcaption>
+      <p>들어오는 길은 <code>127.0.0.1:8088</code>의 gateway 하나뿐입니다. gateway는 <code>/api/*</code>를 backend로, 나머지를 frontend로 보냅니다. MySQL과 Redis는 <code>internal: true</code>인 data 네트워크에만 있어서, 두 네트워크에 모두 붙은 backend와 migrate만 DB에 닿습니다.</p>
+      <p class="src">근거: <code>docker-compose.yml</code>(services, networks, x-hardening, deploy.replicas), <code>gateway/nginx.conf</code>(location /api/, location /)</p>
+    </figcaption>
+  </figure>
+</section>
+
+<!-- ============ 2. EKS 대응 ============ -->
+<section id="eks">
+  <div class="num">그림 2</div>
+  <h2>EKS로 옮기면 각 구성요소가 무엇이 되나 <span class="plan-tag">계획</span></h2>
+  <figure>
+    <div class="scroll">
+    <svg class="d" viewBox="0 0 960 760" role="img" aria-label="계획: compose의 gateway는 ALB Ingress, frontend는 Deployment와 Service, backend는 Deployment와 Service와 HPA, migrate는 Job, mysql은 RDS, redis는 ElastiCache 또는 클러스터 내부 Redis, data 네트워크는 프라이빗 서브넷, 개발용 비밀번호는 K8s Secret, 로컬 이미지는 ECR이 된다. 오른쪽은 모두 아직 만들지 않았다.">
+      <defs>
+        <marker id="f2p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkp"/></marker>
+      </defs>
+      <text x="24" y="28" class="tt">지금 · docker-compose (실행 중)</text>
+      <text x="440" y="28" class="tt tp">EKS · 계획 (매니페스트·ECR·RDS 모두 아직 없음)</text>
+
+      <!-- row template: y = 44 + i*70 -->
+      <g>
+        <rect x="24" y="44" width="360" height="56" rx="8" class="n"/>
+        <text x="40" y="67" class="tt">gateway</text><text x="40" y="86" class="ts">nginx · / 와 /api/* 경로 분기</text>
+        <line x1="384" y1="72" x2="436" y2="72" class="lp" marker-end="url(#f2p)"/>
+        <rect x="440" y="44" width="496" height="56" rx="8" class="np"/>
+        <text x="456" y="67" class="tt">ALB Ingress</text><text x="456" y="86" class="ts">같은 경로 분기를 Ingress 규칙으로</text>
+        <text x="922" y="67" class="ts end tp">계획</text>
+      </g>
+      <g>
+        <rect x="24" y="114" width="360" height="56" rx="8" class="n"/>
+        <text x="40" y="137" class="tt">frontend</text><text x="40" y="156" class="ts">nginx · uid 101 · /healthz</text>
+        <line x1="384" y1="142" x2="436" y2="142" class="lp" marker-end="url(#f2p)"/>
+        <rect x="440" y="114" width="496" height="56" rx="8" class="np"/>
+        <text x="456" y="137" class="tt">Deployment + Service</text><text x="456" y="156" class="ts">runAsUser 101 · readOnlyRootFilesystem · httpGet /healthz 프로브</text>
+        <text x="922" y="137" class="ts end tp">계획</text>
+      </g>
+      <g>
+        <rect x="24" y="184" width="360" height="56" rx="8" class="na"/>
+        <text x="40" y="207" class="tt">backend × 2</text><text x="40" y="226" class="ts">deploy.replicas: 2 · mem_limit 512m</text>
+        <line x1="384" y1="212" x2="436" y2="212" class="lp" marker-end="url(#f2p)"/>
+        <rect x="440" y="184" width="496" height="56" rx="8" class="np"/>
+        <text x="456" y="207" class="tt">Deployment + Service + HPA</text><text x="456" y="226" class="ts">replicas · /healthz·/readyz 프로브 · 세션이 Redis라 스티키 세션 불필요</text>
+        <text x="922" y="207" class="ts end tp">계획</text>
+      </g>
+      <g>
+        <rect x="24" y="254" width="360" height="56" rx="8" class="n"/>
+        <text x="40" y="277" class="tt">migrate</text><text x="40" y="296" class="ts">같은 이미지 · migrate 인자 · 1회 실행</text>
+        <line x1="384" y1="282" x2="436" y2="282" class="lp" marker-end="url(#f2p)"/>
+        <rect x="440" y="254" width="496" height="56" rx="8" class="np"/>
+        <text x="456" y="277" class="tt">Job</text><text x="456" y="296" class="ts">서버보다 먼저 1회 실행 · DDL 권한은 Job 계정에만</text>
+        <text x="922" y="277" class="ts end tp">계획</text>
+      </g>
+      <g>
+        <rect x="24" y="324" width="360" height="56" rx="8" class="nm"/>
+        <text x="40" y="347" class="tt">mysql 8.4 컨테이너</text><text x="40" y="366" class="ts">볼륨 mysql-data</text>
+        <line x1="384" y1="352" x2="436" y2="352" class="lp" marker-end="url(#f2p)"/>
+        <rect x="440" y="324" width="496" height="56" rx="8" class="np"/>
+        <text x="456" y="347" class="tt">RDS (MySQL)</text><text x="456" y="366" class="ts">VERIFY_IDENTITY를 쓰려면 RDS CA를 트러스트스토어에</text>
+        <text x="922" y="347" class="ts end tp">계획</text>
+      </g>
+      <g>
+        <rect x="24" y="394" width="360" height="56" rx="8" class="nr"/>
+        <text x="40" y="417" class="tt">redis 7 컨테이너</text><text x="40" y="436" class="ts">비밀번호 인증 · appendonly no</text>
+        <line x1="384" y1="422" x2="436" y2="422" class="lp" marker-end="url(#f2p)"/>
+        <rect x="440" y="394" width="496" height="56" rx="8" class="np"/>
+        <text x="456" y="417" class="tt">ElastiCache 또는 클러스터 내부 Redis</text><text x="456" y="436" class="ts">클러스터 모드 비활성 필수 (Lua가 여러 키를 함께 다룸) · REDIS_SSL</text>
+        <text x="922" y="417" class="ts end tp">계획</text>
+      </g>
+      <g>
+        <rect x="24" y="464" width="360" height="56" rx="8" class="n"/>
+        <text x="40" y="487" class="tt">data 네트워크 (internal: true)</text><text x="40" y="506" class="ts">DB·Redis는 backend·migrate만 접근</text>
+        <line x1="384" y1="492" x2="436" y2="492" class="lp" marker-end="url(#f2p)"/>
+        <rect x="440" y="464" width="496" height="56" rx="8" class="np"/>
+        <text x="456" y="487" class="tt">프라이빗 서브넷</text><text x="456" y="506" class="ts">compose 주석의 대응. 서브넷 구성은 아직 정하지 않음</text>
+        <text x="922" y="487" class="ts end tp">계획</text>
+      </g>
+      <g>
+        <rect x="24" y="534" width="360" height="56" rx="8" class="n"/>
+        <text x="40" y="557" class="tt">환경변수의 개발용 비밀번호</text><text x="40" y="576" class="ts">compose 파일에 적힌 가짜 값</text>
+        <line x1="384" y1="562" x2="436" y2="562" class="lp" marker-end="url(#f2p)"/>
+        <rect x="440" y="534" width="496" height="56" rx="8" class="np"/>
+        <text x="456" y="557" class="tt">K8s Secret</text><text x="456" y="576" class="ts">비밀값은 코드·이미지에 넣지 않고 환경변수로만 주입</text>
+        <text x="922" y="557" class="ts end tp">계획</text>
+      </g>
+      <g>
+        <rect x="24" y="604" width="360" height="56" rx="8" class="n"/>
+        <text x="40" y="627" class="tt">로컬 이미지</text><text x="40" y="646" class="mono ts">ticketing-backend:dev · ticketing-frontend:dev</text>
+        <line x1="384" y1="632" x2="436" y2="632" class="lp" marker-end="url(#f2p)"/>
+        <rect x="440" y="604" width="496" height="56" rx="8" class="np"/>
+        <text x="456" y="627" class="tt">ECR</text><text x="456" y="646" class="ts">이미지 저장소 · 코드만 바뀌면 작은 레이어만 push (그림 6)</text>
+        <text x="922" y="627" class="ts end tp">계획</text>
+      </g>
+      <g>
+        <rect x="24" y="674" width="360" height="56" rx="8" class="n"/>
+        <text x="40" y="697" class="tt">SESSION_COOKIE_SECURE=false</text><text x="40" y="716" class="ts">로컬은 http</text>
+        <line x1="384" y1="702" x2="436" y2="702" class="lp" marker-end="url(#f2p)"/>
+        <rect x="440" y="674" width="496" height="56" rx="8" class="np"/>
+        <text x="456" y="697" class="tt">true (https)</text><text x="456" y="716" class="ts">세션 쿠키에 Secure. 운영 기본값</text>
+        <text x="922" y="697" class="ts end tp">계획</text>
+      </g>
+    </svg>
+    </div>
+    <figcaption>
+      <p>왼쪽은 지금 실제로 도는 것이고, 오른쪽 점선 칸은 모두 <strong>아직 만들지 않은 계획</strong>입니다. 대응 관계는 <code>docker-compose.yml</code> 맨 위 주석과 문서에 적힌 것만 옮겼고, 노드 수·인스턴스 크기·서브넷 CIDR·HPA 기준값처럼 정하지 않은 값은 그리지 않았습니다.</p>
+      <p class="src">근거: <code>docker-compose.yml</code> 머리 주석(EKS와의 대응, K8s Secret), <code>docs/ARCHITECTURE.md</code> 2장, <code>backend/README.md</code> 8장(Redis Cluster 모드, RDS CA), <code>frontend/README.md</code>(securityContext, 프로브). ECR은 프로젝트 파일에 아직 언급이 없고, 배포 계획에서 가져온 항목입니다.</p>
+    </figcaption>
+  </figure>
+</section>
+
+<!-- ============ 3. 예매 흐름 ============ -->
+<section id="booking">
+  <div class="num">그림 3</div>
+  <h2>예매 흐름: 어느 단계가 Redis이고 어느 단계가 MySQL인가</h2>
+  <figure>
+    <div class="scroll">
+    <svg class="d wide" viewBox="0 0 960 930" role="img" aria-label="로그인은 MySQL users 확인 후 Redis에 세션 저장, 대기열 진입과 상태 조회는 Redis Lua, 좌석 조회는 MySQL 판매 상태와 Redis 선점 키를 합침, 선점은 Redis Lua로 전부 아니면 전무이며 300초 TTL, 예매 확정은 MySQL 트랜잭션의 WHERE status='AVAILABLE'로 최종 방어, 커밋 후 Redis에서 선점 삭제와 입장 권한 반납.">
+      <defs>
+        <marker id="f3k" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker>
+        <marker id="f3r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkr"/></marker>
+        <marker id="f3m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkm"/></marker>
+        <marker id="f3u" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mku"/></marker>
+      </defs>
+      <!-- lifelines -->
+      <line x1="100" y1="56" x2="100" y2="920" class="ll"/>
+      <line x1="360" y1="56" x2="360" y2="920" class="ll"/>
+      <line x1="640" y1="56" x2="640" y2="920" class="ll"/>
+      <line x1="860" y1="56" x2="860" y2="920" class="ll"/>
+      <rect x="30" y="12" width="140" height="44" rx="8" class="n"/>
+      <text x="100" y="39" class="tt c">브라우저</text>
+      <rect x="280" y="12" width="160" height="44" rx="8" class="na"/>
+      <text x="360" y="31" class="tt c">backend</text>
+      <text x="360" y="48" class="ts c">복제본 어느 쪽이든</text>
+      <rect x="570" y="12" width="140" height="44" rx="8" class="nr"/>
+      <text x="640" y="39" class="tt c tr">Redis</text>
+      <rect x="790" y="12" width="140" height="44" rx="8" class="nm"/>
+      <text x="860" y="39" class="tt c tm">MySQL</text>
+
+      <!-- 1 login -->
+      <line x1="8" y1="70" x2="952" y2="70" class="sep"/>
+      <text x="14" y="88" class="tt ta">① 로그인</text>
+      <line x1="100" y1="104" x2="356" y2="104" class="l" marker-end="url(#f3k)"/>
+      <text x="230" y="98" class="c halo mono">POST /api/auth/login</text>
+      <line x1="360" y1="132" x2="856" y2="132" class="lm" marker-end="url(#f3m)"/>
+      <text x="610" y="126" class="c halo tm">users 조회 · BCrypt 비교</text>
+      <line x1="360" y1="160" x2="636" y2="160" class="lr" marker-end="url(#f3r)"/>
+      <text x="500" y="154" class="c halo tr">세션 ID 재발급 · 세션 HASH 저장</text>
+      <line x1="356" y1="186" x2="104" y2="186" class="lret" marker-end="url(#f3u)"/>
+      <text x="230" y="180" class="c halo ts">200 · 쿠키 TKT_SESSION (HttpOnly)</text>
+
+      <!-- 2 queue -->
+      <line x1="8" y1="200" x2="952" y2="200" class="sep"/>
+      <text x="14" y="218" class="tt ta">② 대기열</text>
+      <line x1="100" y1="236" x2="356" y2="236" class="l" marker-end="url(#f3k)"/>
+      <text x="230" y="230" class="c halo mono">POST /api/queue/enter</text>
+      <line x1="360" y1="264" x2="636" y2="264" class="lr" marker-end="url(#f3r)"/>
+      <text x="500" y="258" class="c halo tr">Lua enter: 상태 전진 → ADMITTED / WAITING</text>
+      <line x1="356" y1="292" x2="104" y2="292" class="lret" marker-end="url(#f3u)"/>
+      <text x="230" y="286" class="c halo ts">queueToken (X-Queue-Token 헤더로만)</text>
+      <line x1="100" y1="318" x2="356" y2="318" class="l" marker-end="url(#f3k)"/>
+      <text x="230" y="312" class="c halo mono">GET /api/queue/status 반복</text>
+      <text x="230" y="334" class="c ts">WAITING이면 2~5초마다 · 끊기면 30초 뒤 제외</text>
+      <line x1="360" y1="318" x2="636" y2="318" class="lr" marker-end="url(#f3r)"/>
+      <text x="500" y="312" class="c halo tr">Lua poll: 만료 정리 → 빈자리만큼 승격</text>
+
+      <!-- 3 seats -->
+      <line x1="8" y1="346" x2="952" y2="346" class="sep"/>
+      <text x="14" y="364" class="tt ta">③ 좌석 조회</text>
+      <line x1="100" y1="382" x2="356" y2="382" class="l" marker-end="url(#f3k)"/>
+      <text x="230" y="376" class="c halo mono">GET /api/performances/:id/seats</text>
+      <line x1="360" y1="408" x2="856" y2="408" class="lm" marker-end="url(#f3m)"/>
+      <text x="610" y="402" class="c halo tm">좌석 판매 상태 (쿼리 1번)</text>
+      <line x1="360" y1="434" x2="636" y2="434" class="lr" marker-end="url(#f3r)"/>
+      <text x="500" y="428" class="c halo tr">선점 키 MGET 1번</text>
+      <line x1="356" y1="460" x2="104" y2="460" class="lret" marker-end="url(#f3u)"/>
+      <text x="230" y="454" class="c halo ts mono">SeatMap: SOLD &gt; HELD/MINE &gt; AVAILABLE</text>
+
+      <!-- 4 hold -->
+      <line x1="8" y1="474" x2="952" y2="474" class="sep"/>
+      <text x="14" y="492" class="tt ta">④ 좌석 선점</text>
+      <line x1="100" y1="510" x2="356" y2="510" class="l" marker-end="url(#f3k)"/>
+      <text x="230" y="504" class="c halo mono">POST …/holds (좌석 1~4개)</text>
+      <line x1="360" y1="538" x2="636" y2="538" class="lr" marker-end="url(#f3r)"/>
+      <text x="500" y="532" class="c halo tr">Lua hold-create: 전부 비었으면 전부 SET PX</text>
+      <rect x="660" y="550" width="282" height="48" rx="8" class="nr"/>
+      <text x="674" y="570" class="tr">TTL 300초(HOLD_SECONDS) 뒤 자동 해제</text>
+      <text x="674" y="588" class="ts">하나라도 남의 좌석이면 아무것도 잡지 않음</text>
+      <line x1="356" y1="592" x2="104" y2="592" class="lret" marker-end="url(#f3u)"/>
+      <text x="230" y="586" class="c halo ts">201 Hold · 실패 시 409 SEAT_TAKEN</text>
+
+      <!-- 5 confirm -->
+      <line x1="8" y1="610" x2="952" y2="610" class="sep"/>
+      <text x="14" y="628" class="tt ta">⑤ 예매 확정</text>
+      <line x1="100" y1="646" x2="356" y2="646" class="l" marker-end="url(#f3k)"/>
+      <text x="230" y="640" class="c halo mono">POST /api/reservations</text>
+      <text x="230" y="662" class="c ts">Idempotency-Key · body { holdId }</text>
+      <line x1="360" y1="682" x2="636" y2="682" class="lr" marker-end="url(#f3r)"/>
+      <text x="500" y="676" class="c halo tr">멱등키 확인 · ADMITTED · 선점 소유 확인</text>
+      <line x1="360" y1="710" x2="856" y2="710" class="lm" marker-end="url(#f3m)"/>
+      <text x="610" y="704" class="c halo tm">BEGIN · users FOR UPDATE · 회차당 4석 확인 · INSERT reservations</text>
+      <line x1="360" y1="738" x2="856" y2="738" class="lm" marker-end="url(#f3m)"/>
+      <text x="610" y="732" class="c halo tm mono">UPDATE seats SET status='SOLD' … AND status='AVAILABLE'</text>
+      <rect x="596" y="750" width="346" height="48" rx="8" class="nm"/>
+      <text x="610" y="770" class="tm">영향 행 수 ≠ 좌석 수 → ROLLBACK → 409</text>
+      <text x="610" y="788" class="ts">Redis가 틀려도 같은 좌석이 두 번 팔리지 않음</text>
+      <line x1="360" y1="818" x2="856" y2="818" class="lm" marker-end="url(#f3m)"/>
+      <text x="610" y="812" class="c halo tm">INSERT reservation_seats → COMMIT</text>
+
+      <!-- 6 cleanup -->
+      <line x1="8" y1="834" x2="952" y2="834" class="sep"/>
+      <text x="14" y="852" class="tt ta">⑥ 정리</text>
+      <line x1="360" y1="870" x2="636" y2="870" class="lr" marker-end="url(#f3r)"/>
+      <text x="500" y="864" class="c halo tr">커밋 후 선점 삭제 · Lua leave: 입장 권한 반납</text>
+      <text x="500" y="886" class="c ts">다음 대기자가 바로 승격</text>
+      <line x1="356" y1="906" x2="104" y2="906" class="lret" marker-end="url(#f3u)"/>
+      <text x="230" y="900" class="c halo ts">201 Reservation</text>
+    </svg>
+    </div>
+    <figcaption>
+      <p>분홍 화살표는 Redis, 초록 화살표는 MySQL입니다. 대기열과 선점처럼 빨리 바뀌는 상태는 Redis Lua가 원자적으로 처리하고, 좌석을 실제로 파는 순간은 MySQL 트랜잭션이 <code>WHERE status='AVAILABLE'</code>의 영향 행 수로 한 번 더 막습니다. 상태를 바꾸는 요청에는 모두 <code>X-CSRF-Token</code>이, ③~⑤에는 <code>X-Queue-Token</code>이 붙습니다.</p>
+      <p class="src">근거: <code>docs/ARCHITECTURE.md</code> 3.2.1~3.2.3·4.3, <code>backend/README.md</code> 5-4·5-5·5-6·5-7</p>
+    </figcaption>
+  </figure>
+</section>
+
+<!-- ============ 4. 세션 ============ -->
+<section id="session">
+  <div class="num">그림 4</div>
+  <h2>로그인 세션을 서버 메모리가 아니라 Redis에 두는 이유</h2>
+  <figure>
+    <div class="scroll">
+    <svg class="d" viewBox="0 0 960 440" role="img" aria-label="왼쪽: 서버 메모리 세션이면 1번 복제본에서 로그인한 뒤 다음 요청이 2번으로 가면 세션이 없어 401이 되고, 재시작하면 세션이 사라진다. 오른쪽: Redis 세션이면 1번이 꺼져도 2번이 Redis에서 세션을 읽어 로그인이 유지된다.">
+      <defs>
+        <marker id="f4k" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker>
+        <marker id="f4r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkr"/></marker>
+        <marker id="f4f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkf"/></marker>
+      </defs>
+      <!-- left panel -->
+      <rect x="10" y="10" width="460" height="420" rx="12" class="panel"/>
+      <text x="30" y="38" class="tt">서버 메모리 세션 (쓰지 않은 방식)</text>
+      <rect x="160" y="56" width="160" height="48" rx="8" class="n"/>
+      <text x="240" y="77" class="tt c">브라우저</text>
+      <text x="240" y="94" class="ts c">쿠키: 세션 ID</text>
+      <line x1="240" y1="104" x2="240" y2="136" class="l" marker-end="url(#f4k)"/>
+      <rect x="160" y="140" width="160" height="44" rx="8" class="n"/>
+      <text x="240" y="160" class="tt c">gateway / Ingress</text>
+      <text x="240" y="176" class="ts c">복제본에 나눠 보냄</text>
+      <line x1="210" y1="184" x2="146" y2="246" class="l" marker-end="url(#f4k)"/>
+      <text x="168" y="214" class="end halo">1. 로그인</text>
+      <line x1="270" y1="184" x2="334" y2="246" class="l" marker-end="url(#f4k)"/>
+      <text x="312" y="214" class="halo">2. 다음 요청</text>
+      <rect x="40" y="250" width="180" height="96" rx="8" class="n"/>
+      <text x="130" y="274" class="tt c">backend #1</text>
+      <rect x="56" y="290" width="148" height="40" rx="6" class="na"/>
+      <text x="130" y="315" class="c">메모리 세션: 사용자 A</text>
+      <rect x="260" y="250" width="180" height="96" rx="8" class="n"/>
+      <text x="350" y="274" class="tt c">backend #2</text>
+      <rect x="276" y="290" width="148" height="40" rx="6" class="nd"/>
+      <text x="350" y="315" class="c ts">세션 없음</text>
+      <text x="130" y="372" class="c ts">재시작·축소하면 세션도 사라짐</text>
+      <text x="350" y="372" class="c tr tt">401 · 다시 로그인</text>
+      <text x="240" y="414" class="c ts">→ 같은 복제본으로만 보내는 스티키 세션(ALB 쿠키 고정)이 필요</text>
+
+      <!-- right panel -->
+      <rect x="490" y="10" width="460" height="420" rx="12" class="panel"/>
+      <text x="510" y="38" class="tt ta">Redis 세션 (미리내 마당)</text>
+      <rect x="640" y="56" width="160" height="48" rx="8" class="n"/>
+      <text x="720" y="77" class="tt c">브라우저</text>
+      <text x="720" y="94" class="ts c mono">쿠키 TKT_SESSION</text>
+      <line x1="720" y1="104" x2="720" y2="136" class="l" marker-end="url(#f4k)"/>
+      <rect x="640" y="140" width="160" height="44" rx="8" class="n"/>
+      <text x="720" y="160" class="tt c">gateway / Ingress</text>
+      <text x="720" y="176" class="ts c">어느 복제본에 보내도 됨</text>
+      <line x1="680" y1="184" x2="624" y2="230" class="lfade" marker-end="url(#f4f)"/>
+      <line x1="760" y1="184" x2="816" y2="230" class="l" marker-end="url(#f4k)"/>
+      <text x="796" y="210" class="halo">다음 요청</text>
+      <rect x="520" y="234" width="180" height="64" rx="8" class="nd"/>
+      <text x="610" y="258" class="tt c ts">backend #1</text>
+      <text x="610" y="276" class="c ts">꺼짐 (재시작·롤링 업데이트)</text>
+      <line x1="530" y1="240" x2="690" y2="292" class="xmark"/>
+      <rect x="740" y="234" width="180" height="64" rx="8" class="na"/>
+      <text x="830" y="258" class="tt c">backend #2</text>
+      <text x="830" y="276" class="c ts">메모리에 세션 없음</text>
+      <line x1="610" y1="298" x2="656" y2="332" class="lfade"/>
+      <line x1="830" y1="298" x2="786" y2="332" class="lr" marker-end="url(#f4r)"/>
+      <text x="826" y="324" class="tr halo">세션 읽기</text>
+      <rect x="580" y="336" width="280" height="66" rx="8" class="nr"/>
+      <text x="720" y="356" class="tt c tr">Redis</text>
+      <text x="720" y="374" class="c mono">ticketing:session:sessions:{ID}</text>
+      <text x="720" y="391" class="c ts">HASH: uid · csrf · 유휴 30분 (요청마다 연장)</text>
+      <text x="720" y="420" class="c ta tt">200 · 로그인 유지 · 스티키 세션 불필요</text>
+    </svg>
+    </div>
+    <figcaption>
+      <p>브라우저에는 세션 ID만 <code>HttpOnly</code> 쿠키로 주고, 로그인한 사용자 id와 CSRF 토큰은 Redis에 둡니다. 그래서 요청이 어느 복제본으로 가도, 한쪽이 재시작돼도 로그인이 그대로입니다. 로그아웃이나 강제 만료도 Redis에서 한 번 지우면 모든 복제본에 바로 적용됩니다. 실제로 컨테이너 2개에서 한쪽에서 로그인·선점하고 다른 쪽에서 확정·취소해 확인했습니다.</p>
+      <p class="src">근거: <code>backend/README.md</code> 5-2(서버 메모리 세션과 Redis 세션 비교표, 실측), Redis 키 표, <code>docker-compose.yml</code> backend.deploy 주석</p>
+    </figcaption>
+  </figure>
+</section>
+
+<!-- ============ 5. 데이터 역할 ============ -->
+<section id="data">
+  <div class="num">그림 5</div>
+  <h2>데이터 역할 분담: 오래 남길 것은 MySQL, 짧게 사는 상태는 Redis</h2>
+  <figure>
+    <div class="scroll">
+    <svg class="d" viewBox="0 0 960 612" role="img" aria-label="위: MySQL은 users, shows, grades, performances, seats, reservations, reservation_seats를 영구 보관하는 기준 데이터. 아래: Redis 키별 수명을 로그 눈금으로 비교. 대기 폴링 30초, 요청 제한 1분, 선점 300초, 입장 권한 600초, 로그인 잠금 15분, 세션 유휴 30분, 멱등키 처리 중 60초와 응답 24시간.">
+      <!-- MySQL block -->
+      <rect x="20" y="20" width="920" height="172" rx="12" class="nm"/>
+      <text x="40" y="48" class="tt tm">MySQL — 기준 데이터 · 지우기 전까지 남음</text>
+      <text x="40" y="68" class="ts">트랜잭션 · 유니크 제약 · 행 잠금으로 마지막에 막는 쪽. 서버 계정은 SELECT/INSERT/UPDATE만</text>
+      <g>
+        <rect x="40" y="88" width="118" height="60" rx="6" class="n"/><text x="99" y="112" class="c mono">users</text><text x="99" y="132" class="c ts">회원 · BCrypt</text>
+        <rect x="166" y="88" width="118" height="60" rx="6" class="n"/><text x="225" y="112" class="c mono">shows</text><text x="225" y="132" class="c ts">공연</text>
+        <rect x="292" y="88" width="118" height="60" rx="6" class="n"/><text x="351" y="112" class="c mono">grades</text><text x="351" y="132" class="c ts">등급별 가격</text>
+        <rect x="418" y="88" width="118" height="60" rx="6" class="n"/><text x="477" y="112" class="c mono">performances</text><text x="477" y="132" class="c ts">회차</text>
+        <rect x="544" y="88" width="118" height="60" rx="6" class="n"/><text x="603" y="112" class="c mono">seats</text><text x="603" y="132" class="c ts mono">AVAILABLE|SOLD</text>
+        <rect x="670" y="88" width="118" height="60" rx="6" class="n"/><text x="729" y="112" class="c mono">reservations</text><text x="729" y="132" class="c ts">예매 · 계정 소유</text>
+        <rect x="796" y="88" width="124" height="60" rx="6" class="n"/><text x="858" y="112" class="c mono">reservation_seats</text><text x="858" y="132" class="c ts">예매 당시 좌석·가격</text>
+      </g>
+      <text x="40" y="176" class="ts">좌석 화면 상태 = DB의 SOLD가 먼저 → 그다음 Redis 선점(내 것 MINE / 남의 것 HELD) → 나머지 AVAILABLE</text>
+
+      <!-- Redis block -->
+      <rect x="20" y="210" width="920" height="390" rx="12" class="nr"/>
+      <text x="40" y="238" class="tt tr">Redis — 짧게 사는 상태 · 저절로 사라짐</text>
+      <text x="40" y="258" class="ts">Lua 스크립트로 원자적 처리 · 모든 복제본이 같은 값을 봄 · 만료 판단은 Redis TIME 한 시계로</text>
+
+      <!-- grid: x = 330 + (log10(s) - 1.4) / 3.6 * 590 -->
+      <line x1="342.6" y1="276" x2="342.6" y2="540" class="grid"/>
+      <line x1="392.0" y1="276" x2="392.0" y2="540" class="grid"/>
+      <line x1="506.5" y1="276" x2="506.5" y2="540" class="grid"/>
+      <line x1="555.9" y1="276" x2="555.9" y2="540" class="grid"/>
+      <line x1="634.1" y1="276" x2="634.1" y2="540" class="grid"/>
+      <line x1="683.4" y1="276" x2="683.4" y2="540" class="grid"/>
+      <line x1="909.6" y1="276" x2="909.6" y2="540" class="grid"/>
+      <line x1="330" y1="540" x2="920" y2="540" class="l"/>
+      <text x="342.6" y="558" class="c ts">30초</text>
+      <text x="392.0" y="558" class="c ts">1분</text>
+      <text x="506.5" y="558" class="c ts">5분</text>
+      <text x="555.9" y="558" class="c ts">10분</text>
+      <text x="634.1" y="558" class="c ts">30분</text>
+      <text x="683.4" y="558" class="c ts">1시간</text>
+      <text x="909.6" y="558" class="c ts">24시간</text>
+      <text x="920" y="584" class="end ts">얼마나 사는지 (로그 눈금) · 점선 막대 = TTL이 아니라 요청 때 Lua가 정리</text>
+
+      <!-- rows -->
+      <text x="40" y="290" class="tt">대기 중 폴링 끊김</text><text x="40" y="304" class="mono ts">queue:{회차}:seen</text>
+      <line x1="333" y1="296" x2="342.6" y2="296" class="bar-rl"/><circle cx="342.6" cy="296" r="5" class="dot-r"/><text x="354" y="300" class="tr">30초 · Lua 정리</text>
+
+      <text x="40" y="324" class="tt">요청 제한 (IP당)</text><text x="40" y="338" class="mono ts">rl:{버킷}:{IP}</text>
+      <line x1="333" y1="330" x2="392" y2="330" class="bar-r"/><circle cx="392" cy="330" r="5" class="dot-r"/><text x="404" y="334" class="tr">1분 · TTL</text>
+
+      <text x="40" y="358" class="tt">좌석 선점</text><text x="40" y="372" class="mono ts">seat:hold:{회차}:{좌석} · hold:{holdId}</text>
+      <line x1="333" y1="364" x2="506.5" y2="364" class="bar-r"/><circle cx="506.5" cy="364" r="5" class="dot-r"/><text x="518" y="368" class="tr">300초 · TTL (연장 불가)</text>
+
+      <text x="40" y="392" class="tt">좌석 화면 입장 권한</text><text x="40" y="406" class="mono ts">queue:{회차}:active</text>
+      <line x1="333" y1="398" x2="555.9" y2="398" class="bar-rl"/><circle cx="555.9" cy="398" r="5" class="dot-r"/><text x="568" y="402" class="tr">600초 · Lua 정리</text>
+
+      <text x="40" y="426" class="tt">로그인 잠금 (5회 실패)</text><text x="40" y="440" class="mono ts">auth:fail:{SHA-256(이메일)}</text>
+      <line x1="333" y1="432" x2="584.7" y2="432" class="bar-r"/><circle cx="584.7" cy="432" r="5" class="dot-r"/><text x="597" y="436" class="tr">15분 · TTL</text>
+
+      <text x="40" y="460" class="tt">로그인 세션</text><text x="40" y="474" class="mono ts">ticketing:session:sessions:{ID}</text>
+      <line x1="333" y1="466" x2="634.1" y2="466" class="bar-r"/><circle cx="634.1" cy="466" r="5" class="dot-r"/><text x="646" y="470" class="tr">유휴 30분 · 요청마다 연장</text>
+
+      <text x="40" y="508" class="tt">예매 멱등키</text><text x="40" y="522" class="mono ts">idem:reservation:{사용자}:{key}</text>
+      <line x1="333" y1="514" x2="909.6" y2="514" class="bar-r"/><circle cx="392" cy="514" r="5" class="dot-ro"/><circle cx="909.6" cy="514" r="5" class="dot-r"/>
+      <text x="392" y="500" class="c tr halo">처리 중 표시 60초</text><text x="900" y="500" class="end tr halo">처음 201 응답 24시간</text>
+    </svg>
+    </div>
+    <figcaption>
+      <p>회원·공연·회차·좌석·예매처럼 잃으면 안 되는 것은 MySQL이 기준입니다. 세션, 대기열, 선점, 요청 제한, 멱등키, 로그인 잠금은 몇십 초에서 하루 안에 사라져야 하는 상태라 Redis에 두고, TTL이나 요청 때 도는 Lua 스크립트로 정리합니다. 덕분에 정리용 스케줄러가 없고, 복제본마다 중복 실행될 일도 없습니다.</p>
+      <p class="src">근거: <code>backend/README.md</code> 데이터 모델, Redis 키 표, 5-3; <code>docs/ARCHITECTURE.md</code> 3.2.1(QUEUE_ADMIT_SECONDS 600, QUEUE_WAIT_TTL_SECONDS 30), 3.2.2(HOLD_SECONDS 300), 3.4(5회 실패 15분 잠금)</p>
+    </figcaption>
+  </figure>
+</section>
+
+<!-- ============ 6. 이미지 빌드 ============ -->
+<section id="build">
+  <div class="num">그림 6</div>
+  <h2>이미지 빌드: 멀티스테이지에서 무엇이 남고 무엇이 빠지나</h2>
+  <figure>
+    <div class="scroll">
+    <svg class="d" viewBox="0 0 960 500" role="img" aria-label="백엔드: build 단계에서 Maven으로 jar를 만들고 layered jar로 풀고, jre 단계에서 jlink로 모듈 17개짜리 JRE를 만든다. 최종 runtime은 alpine 3.22 위에 맞춤 JRE, dependencies, spring-boot-loader, snapshot-dependencies, application, AppCDS 아카이브를 쌓는다. JDK, Maven, 소스는 남지 않는다. 압축 100MB, 디스크 294MB.">
+      <defs>
+        <marker id="f6k" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker>
+      </defs>
+      <text x="20" y="20" class="tt ta">백엔드 (Spring Boot)</text>
+      <rect x="20" y="34" width="300" height="182" rx="8" class="n"/>
+      <text x="36" y="58" class="tt">1) build</text>
+      <text x="36" y="76" class="mono ts">eclipse-temurin:21-jdk-alpine</text>
+      <text x="36" y="102">pom.xml · mvnw만 먼저 복사</text>
+      <text x="36" y="122">→ dependency:go-offline (캐시 레이어)</text>
+      <text x="36" y="142">→ 소스 복사 → package</text>
+      <text x="36" y="162">→ jarmode=tools extract --layers</text>
+      <text x="36" y="196" class="ts">BuildKit 캐시 마운트로 ~/.m2 재사용</text>
+
+      <rect x="20" y="232" width="300" height="122" rx="8" class="n"/>
+      <text x="36" y="256" class="tt">2) jre</text>
+      <text x="36" y="274" class="ts">같은 JDK 이미지에서 jlink</text>
+      <text x="36" y="298">실제 쓰는 모듈 17개만</text>
+      <text x="36" y="318" class="mono">--strip-debug --compress=zip-6</text>
+      <text x="36" y="338" class="mono">--generate-cds-archive</text>
+
+      <rect x="20" y="370" width="300" height="110" rx="8" class="nd"/>
+      <text x="36" y="394" class="tt ts">최종 이미지에 없는 것</text>
+      <text x="36" y="418" class="strike ts">JDK · Maven · ~/.m2 캐시</text>
+      <text x="36" y="438" class="strike ts">소스 · target/ · 빌드 단계 전체</text>
+      <text x="36" y="464" class="ts">빌드 도구가 없어 공격 표면도 줄어듦</text>
+
+      <path d="M320,120 C380,120 380,230 436,230" class="l" marker-end="url(#f6k)"/>
+      <text x="378" y="112" class="c mono halo">COPY --from=build</text>
+      <path d="M320,300 C380,300 380,352 436,352" class="l" marker-end="url(#f6k)"/>
+      <text x="378" y="292" class="c mono halo">COPY --from=jre</text>
+
+      <text x="440" y="20" class="tt">3) runtime (최종) · 위로 갈수록 자주 바뀜</text>
+      <text x="440" y="38" class="mono ts">alpine:3.22 · USER 10001 · java -XX:MaxRAMPercentage=75.0 …</text>
+      <rect x="440" y="80" width="500" height="44" rx="6" class="n"/>
+      <text x="456" y="99" class="tt mono">/app/app.jsa (AppCDS)</text><text x="456" y="115" class="ts">runtime 단계에서 학습 실행으로 생성 · 압축 약 14MB · 배포마다 다시 push</text>
+      <rect x="440" y="130" width="500" height="44" rx="6" class="na"/>
+      <text x="456" y="149" class="tt mono">application/</text><text x="456" y="165" class="ts">앱 코드 246 KB (v3) · 코드만 바뀌면 이 층과 그 위만 새로 만듦</text>
+      <rect x="440" y="180" width="500" height="44" rx="6" class="n"/>
+      <text x="456" y="199" class="tt mono">snapshot-dependencies/</text><text x="456" y="215" class="ts">SNAPSHOT 의존성</text>
+      <rect x="440" y="230" width="500" height="44" rx="6" class="n"/>
+      <text x="456" y="249" class="tt mono">spring-boot-loader/</text><text x="456" y="265" class="ts">jar 실행기</text>
+      <rect x="440" y="280" width="500" height="44" rx="6" class="n"/>
+      <text x="456" y="299" class="tt mono">dependencies/</text><text x="456" y="315" class="ts">라이브러리 38.3 MB (v3) · 거의 안 바뀌어 캐시 재사용</text>
+      <rect x="440" y="330" width="500" height="44" rx="6" class="n"/>
+      <text x="456" y="349" class="tt mono">/opt/jre</text><text x="456" y="365" class="ts">jlink 맞춤 JRE</text>
+      <rect x="440" y="380" width="500" height="44" rx="6" class="n"/>
+      <text x="456" y="399" class="tt mono">alpine:3.22</text><text x="456" y="415" class="ts">apk upgrade · 사용자 app (UID 10001)</text>
+      <text x="440" y="452" class="tt ta">합계: 압축 100 MB · 디스크 294 MB (v3)</text>
+      <text x="440" y="472" class="ts">Spring 기동 4.4–4.9 s (중앙값 4.7) · 512m·1 CPU 컨테이너, v3 측정</text>
+    </svg>
+    </div>
+    <div class="scroll">
+    <svg class="d" viewBox="0 0 960 300" role="img" aria-label="프론트엔드: build 단계에서 node 24 alpine으로 npm ci와 vite build를 하고, 최종 이미지는 nginx-unprivileged alpine-slim에 정적 파일과 nginx 설정만 담는다. Node, npm, 소스, node_modules는 남지 않는다.">
+      <defs>
+        <marker id="f6b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker>
+      </defs>
+      <text x="20" y="20" class="tt ta">프론트엔드 (React + Vite)</text>
+      <rect x="20" y="34" width="420" height="160" rx="8" class="n"/>
+      <text x="36" y="58" class="tt">1) build</text>
+      <text x="36" y="76" class="mono ts">node:24-alpine (digest 고정)</text>
+      <text x="36" y="102">package.json · lock 먼저 → npm ci (캐시 레이어)</text>
+      <text x="36" y="122">→ src · public 복사 → npm run build</text>
+      <text x="36" y="142">→ 번들에 모의 코드가 섞이면 빌드 실패 (grep 검사)</text>
+      <text x="36" y="176" class="ts">결과: dist/ (정적 파일)</text>
+
+      <rect x="20" y="210" width="420" height="72" rx="8" class="nd"/>
+      <text x="36" y="234" class="tt ts">최종 이미지에 없는 것</text>
+      <text x="36" y="258" class="strike ts">Node · npm · 소스 · node_modules · mock/</text>
+
+      <path d="M440,110 C490,110 490,104 536,104" class="l" marker-end="url(#f6b)"/>
+      <text x="488" y="96" class="c mono halo">COPY dist</text>
+
+      <text x="540" y="20" class="tt">2) runtime (최종)</text>
+      <text x="540" y="38" class="mono ts">nginx-unprivileged:1.30-alpine-slim (digest 고정)</text>
+      <rect x="540" y="82" width="400" height="44" rx="6" class="na"/>
+      <text x="556" y="101" class="tt mono">/usr/share/nginx/html</text><text x="556" y="117" class="ts">정적 파일 · root 소유, nginx(101)는 못 바꿈</text>
+      <rect x="540" y="132" width="400" height="44" rx="6" class="n"/>
+      <text x="556" y="151" class="tt mono">nginx.conf · security-headers.conf</text><text x="556" y="167" class="ts">CSP · nosniff · frame-ancestors 'none'</text>
+      <rect x="540" y="182" width="400" height="44" rx="6" class="n"/>
+      <text x="556" y="201" class="tt">기본 conf.d · 예제 페이지 삭제</text><text x="556" y="217" class="ts">이 작업만 root로 하고 바로 USER 101</text>
+      <text x="540" y="254" class="ts">실행: uid 101 · :8080 · STOPSIGNAL SIGQUIT · 쓰기는 /tmp만</text>
+      <text x="540" y="274" class="ts">이미지 크기 수치는 프론트 README에 없어 적지 않음</text>
+    </svg>
+    </div>
+    <div class="scroll">
+    <svg class="d" viewBox="0 0 960 256" role="img" aria-label="백엔드 이미지 최적화 단계별 측정(v1): 최적화 없음 366MB, 기동 7.2~8.7초. 멀티스테이지 108MB, 6.2~8.1초. jlink 85.8MB, 5.8~8.3초. AppCDS 99.8MB, 3.6~4.1초.">
+      <text x="20" y="24" class="tt">백엔드 최적화 단계별 실측 (v1에서 측정)</text>
+      <text x="310" y="24" class="ts">압축 크기 (MB)</text>
+      <text x="740" y="24" class="ts">Spring 기동 (초)</text>
+      <!-- size scale: x = 310 + MB * 0.975 ; time: x = 740 + s * 20 -->
+      <line x1="310" y1="34" x2="310" y2="226" class="sep"/>
+      <line x1="740" y1="34" x2="740" y2="226" class="sep"/>
+
+      <text x="20" y="54" class="tt">0. 최적화 없음</text><text x="20" y="69" class="ts">JDK+Maven 한 단계 · root</text>
+      <rect x="310" y="45" width="356.9" height="22" rx="3" class="bar"/><text x="673" y="60">366</text>
+      <rect x="884" y="51" width="30" height="10" rx="2" class="rng"/><text x="878" y="60" class="end ts">7.2–8.7</text>
+
+      <text x="20" y="102" class="tt">1. 멀티스테이지 + layered jar</text><text x="20" y="117" class="ts">공식 JRE alpine · non-root</text>
+      <rect x="310" y="93" width="105.3" height="22" rx="3" class="bar"/><text x="422" y="108">108</text>
+      <rect x="864" y="99" width="38" height="10" rx="2" class="rng"/><text x="858" y="108" class="end ts">6.2–8.1</text>
+
+      <text x="20" y="150" class="tt">2. + jlink 맞춤 JRE</text><text x="20" y="165" class="ts">모듈 17개</text>
+      <rect x="310" y="141" width="83.7" height="22" rx="3" class="bar"/><text x="400" y="156">85.8</text>
+      <rect x="856" y="147" width="50" height="10" rx="2" class="rng"/><text x="850" y="156" class="end ts">5.8–8.3</text>
+
+      <text x="20" y="198" class="tt ta">3. + AppCDS (최종)</text><text x="20" y="213" class="ts">기동 약 2배 빠름, 대신 14MB 증가</text>
+      <rect x="310" y="189" width="97.3" height="22" rx="3" class="bar-a"/><text x="414" y="204" class="ta tt">99.8</text>
+      <rect x="812" y="195" width="10" height="10" rx="2" class="rng-a"/><text x="806" y="204" class="end ta tt">3.6–4.1</text>
+
+      <line x1="310" y1="226" x2="700" y2="226" class="l"/>
+      <text x="310" y="244" class="c ts">0</text><text x="407.5" y="244" class="c ts">100</text><text x="505" y="244" class="c ts">200</text><text x="602.5" y="244" class="c ts">300</text><text x="700" y="244" class="c ts">400</text>
+      <line x1="740" y1="226" x2="940" y2="226" class="l"/>
+      <text x="740" y="244" class="c ts">0</text><text x="840" y="244" class="c ts">5</text><text x="932" y="244" class="c ts">10</text>
+    </svg>
+    </div>
+    <figcaption>
+      <p>두 이미지 모두 빌드 단계의 도구와 소스는 버리고 결과물만 최종 이미지로 옮기며, non-root(백엔드 UID 10001, 프론트 101)로 읽기 전용 루트 FS에서 돕니다. 백엔드는 잘 안 바뀌는 층을 아래에 두어 코드만 바뀌면 위쪽 작은 층만 새로 만들고, AppCDS로 이미지가 14MB 커지는 대신 기동 시간을 약 절반으로 줄였습니다.</p>
+      <p class="src">근거: <code>backend/Dockerfile</code>, <code>frontend/Dockerfile</code>, <code>backend/README.md</code> 6장(측정 조건: 같은 PC, <code>--memory 512m --cpus 1</code>; 표의 압축 크기는 push 크기), <code>frontend/README.md</code> 컨테이너 절</p>
+    </figcaption>
+  </figure>
+</section>
+
+<section class="notes" aria-labelledby="notes-h">
+  <h2 id="notes-h">그리지 않은 것과 계획으로 표시한 것</h2>
+  <ul>
+    <li>그림 2의 EKS 쪽은 전부 계획입니다. 매니페스트, ECR 저장소, RDS, ElastiCache, Ingress는 아직 만들지 않았습니다.</li>
+    <li>노드 수, 인스턴스 크기, VPC·서브넷 CIDR, 가용 영역, HPA 기준값(CPU % 등)은 프로젝트 파일에 없어서 그리지 않았습니다.</li>
+    <li>ECR은 프로젝트 파일에는 아직 나오지 않고 배포 계획에서 가져왔습니다. ElastiCache와 클러스터 내부 Redis 중 무엇을 쓸지도 아직 정하지 않았습니다.</li>
+    <li>프론트엔드 이미지 크기와 기동 시간은 README에 측정값이 없어 적지 않았습니다.</li>
+    <li>compose 파일의 개발용 비밀번호 값은 이 페이지에 넣지 않았습니다.</li>
+  </ul>
+</section>
+</div>

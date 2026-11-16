@@ -1,0 +1,16 @@
+# 빌드 컨텍스트에는 Dockerfile이 COPY하는 것만 남긴다(작고 빠르고, 비밀값 유출 없음)
+node_modules
+dist
+.git
+.gitignore
+.env
+.env.*
+*.local
+*.log
+npm-debug.log*
+.claude
+.vscode
+.idea
+README.md
+Dockerfile
+.dockerignore
