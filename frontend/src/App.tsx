@@ -98,6 +98,7 @@ export function App() {
         <div className="wrap">
           <p>미리내 마당의 공연, 출연진, 공연장, 포스터는 모두 실습용으로 지어낸 것입니다.</p>
           <p>예매한 내역은 로그인한 뒤 내 예매에서 확인하고 취소할 수 있습니다.</p>
+          <p className="site-version">버전 {import.meta.env.VITE_APP_VERSION ?? 'dev'}</p>
         </div>
       </footer>
     </>

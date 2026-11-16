@@ -24,6 +24,9 @@ COPY public ./public
 COPY src ./src
 # mock/은 타입 검사 대상이라 복사하지만, `vite build`는 이를 번들에 넣지 않는다(mock 모드에서만 import).
 COPY mock ./mock
+# 화면 아래에 표시할 버전. 빌드할 때 --build-arg APP_VERSION=1.1 처럼 넘긴다
+ARG APP_VERSION=dev
+ENV VITE_APP_VERSION=${APP_VERSION}
 RUN npm run build \
  && ! grep -rqE "__mock|ratelimit@test\.kr|offline@test\.kr" dist   # 모의 코드가 번들에 섞이면 빌드 실패
 

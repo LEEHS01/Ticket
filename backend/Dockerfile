@@ -73,6 +73,10 @@ COPY --from=build /workspace/target/extracted/application/ ./
 RUN DB_HOST=cds-training DB_USER=cds DB_PASSWORD=cds REDIS_HOST=cds-training \
     java -XX:ArchiveClassesAtExit=/app/app.jsa -Dspring.context.exit=onRefresh -jar /app/app.jar > /dev/null
 
+# 이미지 버전. 맨 뒤에 두어 버전만 바뀌면 앞 레이어를 모두 캐시에서 재사용한다(/api/version 으로 확인)
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
+
 USER 10001:10001
 EXPOSE 8080
 # 힙은 고정값 대신 컨테이너 메모리 한도의 75%. OOM이면 즉시 종료해 K8s가 재시작하게 한다.
