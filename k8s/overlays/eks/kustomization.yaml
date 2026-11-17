@@ -7,6 +7,7 @@ resources:
 - ../../base
 - storageclass.yaml
 - ingress.yaml
+- networkpolicy-controller.yaml
 
 # 이미지를 Docker Hub에서 ECR로 바꾼다 (backend Deployment와 migrate Job 모두 바뀐다)
 images:
