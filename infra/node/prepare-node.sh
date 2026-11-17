@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Kubernetes Core 노드 사전 준비 (Rocky Linux 9): 02.01 본문 절차를 한 번에 적용한다
+# 원본: 수업 실습의 02/01/prepare-node.sh (변경 없음). swap · 커널 파라미터 · containerd · kubeadm 설치를 한 번에 한다
 #
 # 사용: sudo bash prepare-node.sh {이 노드의 클러스터 IP}
 #   예: sudo bash prepare-node.sh 192.168.56.11

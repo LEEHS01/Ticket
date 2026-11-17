@@ -1,5 +1,6 @@
 ﻿# 미리내 마당 ③ 단계 클러스터 (AWS EC2): cp · worker1 · worker2
-# VPC · 서브넷 · 보안 그룹 · 키 페어 · EC2 3대를 AWS CLI로 한 번에 만든다
+# 원본: 수업 실습의 aws/create-cluster.ps1. 자원 이름을 ticketing-k8s-* 로 바꾸고,
+# 보안 그룹을 노드 사이 전체 허용 → 필요한 포트만 여는 규칙으로 바꿨다
 #
 # VPC 192.168.0.0/16, 퍼블릭 서브넷 192.168.56.0/24, 사설 IP .10 · .11 · .12 고정
 # Rocky Linux 9 공식 AMI(x86_64), t3.medium, 루트 볼륨 30GB gp3

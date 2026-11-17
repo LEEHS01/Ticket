@@ -1,4 +1,5 @@
-# kubeadm init 설정 (cp 노드). API 서버 주소, 버전, Pod 대역을 정한다
+# kubeadm init 설정 (cp 노드). 원본: 수업 실습의 02/03/kubeadm-config.yaml
+# 설치된 kubeadm · kubelet(v1.36.6)과 맞추려고 kubernetesVersion만 v1.36.5 → v1.36.6 으로 바꿨다
 #   sudo kubeadm init --config kubeadm-config.yaml
 apiVersion: kubeadm.k8s.io/v1beta4
 kind: InitConfiguration
