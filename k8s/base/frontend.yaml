@@ -20,6 +20,7 @@ spec:
       labels:
         app: frontend
     spec:
+      serviceAccountName: frontend
       securityContext:
         runAsNonRoot: true
         runAsUser: 101             # 이미지의 nginx 사용자

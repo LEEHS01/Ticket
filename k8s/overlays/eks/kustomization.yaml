@@ -8,6 +8,7 @@ resources:
 - storageclass.yaml
 - ingress.yaml
 - networkpolicy-controller.yaml
+- hpa.yaml
 
 # 이미지를 Docker Hub에서 ECR로 바꾼다 (backend Deployment와 migrate Job 모두 바뀐다)
 images:
@@ -37,3 +38,27 @@ patches:
       path: /metadata/annotations
       value:
         alb.ingress.kubernetes.io/healthcheck-path: /healthz
+# 가용 영역 분산: backend · frontend Pod를 가용 영역 2개에 나눠 둔다. 노드가 한 영역에만 있으면
+# Auto Mode가 다른 영역에 노드를 만든다.
+- target: {kind: Deployment, name: backend}
+  patch: |-
+    - op: add
+      path: /spec/template/spec/topologySpreadConstraints/-
+      value:
+        maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app: backend
+- target: {kind: Deployment, name: frontend}
+  patch: |-
+    - op: add
+      path: /spec/template/spec/topologySpreadConstraints/-
+      value:
+        maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app: frontend
