@@ -1,5 +1,4 @@
 ﻿# ③ 클러스터 삭제: Organization=ticketing · Project=k8s 태그 자원을 생성의 역순으로 삭제한다
-# 수업의 delete-cluster.ps1 과 같고, 이름과 키 파일 권한 처리만 바꿨다
 # 실행 전: $env:AWS_PROFILE = '<프로필>'
 
 $env:AWS_REGION = if ($env:AWS_REGION) { $env:AWS_REGION } else { 'ap-northeast-2' }
