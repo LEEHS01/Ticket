@@ -1,0 +1,94 @@
+# 비밀이 아닌 설정. 바꾼 뒤에는 kubectl rollout restart deployment/backend -n ticketing 로 Pod를 교체한다
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ticketing-config
+  namespace: ticketing
+data:
+  DB_HOST: mysql                    # mysql Service 이름
+  DB_PORT: "3306"
+  DB_NAME: ticketing
+  REDIS_HOST: redis                 # redis Service 이름
+  REDIS_PORT: "6379"
+  SESSION_COOKIE_SECURE: "false"    # NodePort는 http라서 끈다. HTTPS인 EKS에서는 true
+  QUEUE_MAX_ACTIVE: "100"           # 회차당 좌석 화면 동시 입장 인원
+  HOLD_SECONDS: "300"               # 좌석 선점 유지 시간(초)
+---
+# MySQL 데이터 디렉터리가 비어 있을 때 한 번 실행된다(/docker-entrypoint-initdb.d).
+# Docker 단계의 backend/docker/mysql-init/01-init.sh 에서 테스트 DB 부분을 뺐다.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-init
+  namespace: ticketing
+data:
+  01-init.sh: |
+    #!/bin/bash
+    # ticketing_app: API 서버용 계정. SELECT/INSERT/UPDATE만 준다(DROP·ALTER·DELETE 불가)
+    set -euo pipefail
+    : "${DB_APP_PASSWORD:?DB_APP_PASSWORD 가 필요합니다}"
+    mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" <<SQL
+    CREATE USER IF NOT EXISTS 'ticketing_app'@'%' IDENTIFIED BY '${DB_APP_PASSWORD}';
+    GRANT SELECT, INSERT, UPDATE ON ticketing.* TO 'ticketing_app'@'%';
+    FLUSH PRIVILEGES;
+    SQL
+---
+# gateway(nginx) 설정. Docker 단계의 gateway/nginx.conf 와 같고, 대상 주소만 Service 이름으로 바꿨다.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-nginx
+  namespace: ticketing
+data:
+  nginx.conf: |
+    #   /api/*  → backend Service(8080)
+    #   그 외   → frontend Service(8080)
+    worker_processes auto;
+    pid /tmp/nginx.pid;
+    error_log /dev/stderr warn;
+
+    events {
+        worker_connections 1024;
+    }
+
+    http {
+        client_body_temp_path /tmp/client_temp;
+        proxy_temp_path       /tmp/proxy_temp;
+        fastcgi_temp_path     /tmp/fastcgi_temp;
+        uwsgi_temp_path       /tmp/uwsgi_temp;
+        scgi_temp_path        /tmp/scgi_temp;
+
+        access_log /dev/stdout;
+        server_tokens off;
+        client_max_body_size 16k;
+
+        server {
+            listen 8080;
+            server_name _;
+
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header Connection "";
+            # 클라이언트가 보낸 X-Forwarded-For는 믿지 않고 실제 접속 IP로 덮어쓴다
+            proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_connect_timeout 3s;
+            proxy_read_timeout 15s;
+
+            # gateway 자신의 상태 확인(프로브용)
+            location = /gateway-healthz {
+                access_log off;
+                return 200 "ok\n";
+            }
+
+            # Service의 ClusterIP는 Service를 지우기 전까지 바뀌지 않으므로, 시작할 때 한 번 해석해도 된다.
+            # (Docker 단계는 컨테이너 IP가 바뀌어서 resolver로 매 요청 해석했다)
+            location /api/ {
+                proxy_pass http://backend:8080;
+            }
+
+            location / {
+                proxy_pass http://frontend:8080;
+            }
+        }
+    }

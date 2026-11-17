@@ -1,0 +1,75 @@
+# 화면(정적 파일 + nginx)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: ticketing
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101             # 이미지의 nginx 사용자
+        runAsGroup: 101
+        seccompProfile: {type: RuntimeDefault}
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: frontend
+      containers:
+      - name: frontend
+        image: harpda/ticketing-frontend:1.1
+        ports:
+        - name: http
+          containerPort: 8080
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: {drop: ["ALL"]}
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        resources:
+          requests: {cpu: 50m, memory: 32Mi}
+          limits: {memory: 128Mi}
+        readinessProbe:
+          httpGet: {path: /healthz, port: http}
+          periodSeconds: 5
+        livenessProbe:
+          httpGet: {path: /healthz, port: http}
+          periodSeconds: 10
+        lifecycle:
+          preStop:
+            sleep: {seconds: 5}
+      volumes:
+      - name: tmp
+        emptyDir: {medium: Memory, sizeLimit: 16Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: ticketing
+spec:
+  selector:
+    app: frontend
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http

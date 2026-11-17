@@ -1,0 +1,86 @@
+# 입구. / 는 frontend, /api 는 backend로 나눈다. NodePort 30080으로 클러스터 밖에 연다.
+# EC2에서는 MetalLB(L2)가 동작하지 않아 LoadBalancer 대신 NodePort를 쓴다.
+# 화면과 API가 같은 주소(출처)여야 로그인 쿠키와 CSRF 확인이 동작하므로 gateway 하나로 묶는다.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: ticketing
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile: {type: RuntimeDefault}
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: gateway
+      containers:
+      - name: nginx
+        image: nginxinc/nginx-unprivileged:1.30-alpine-slim
+        command: ["nginx", "-g", "daemon off;"]   # 설정을 고쳐 쓰는 기본 entrypoint를 건너뛴다
+        ports:
+        - name: http
+          containerPort: 8080
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: {drop: ["ALL"]}
+        volumeMounts:
+        - name: conf
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+        resources:
+          requests: {cpu: 50m, memory: 32Mi}
+          limits: {memory: 128Mi}
+        readinessProbe:
+          httpGet: {path: /gateway-healthz, port: http}
+          periodSeconds: 5
+        livenessProbe:
+          httpGet: {path: /gateway-healthz, port: http}
+          periodSeconds: 10
+        lifecycle:
+          preStop:
+            sleep: {seconds: 5}
+      volumes:
+      - name: conf
+        configMap:
+          name: gateway-nginx
+      - name: tmp
+        emptyDir: {medium: Memory, sizeLimit: 16Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: ticketing
+spec:
+  type: NodePort
+  selector:
+    app: gateway
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    nodePort: 30080      # 보안 그룹에서 내 IP에만 연 포트

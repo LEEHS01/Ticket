@@ -1,0 +1,17 @@
+# kubeadm init 설정 (cp 노드). 수업의 02/03/kubeadm-config.yaml 과 같고 버전만 설치된 kubeadm에 맞췄다
+#   sudo kubeadm init --config kubeadm-config.yaml
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: 192.168.56.10
+---
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+kubernetesVersion: v1.36.6
+networking:
+  podSubnet: 10.244.0.0/16      # Calico IP pool과 같게 둔다. VPC(192.168.0.0/16)와 겹치지 않는다
+  serviceSubnet: 10.96.0.0/12
+---
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+serverTLSBootstrap: true        # kubelet 서빙 인증서를 CSR로 받는다(kubectl certificate approve 필요)
