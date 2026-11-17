@@ -1,0 +1,8 @@
+# 비교용: 최적화하지 않은 단일 스테이지 빌드 (선택 과제 「빌드 최적화」의 기준선)
+#   cd backend && docker build -f ../docs/optional/Dockerfile.backend-naive -t opt-backend:naive .
+FROM eclipse-temurin:21-jdk
+WORKDIR /app
+COPY . .
+RUN ./mvnw -B -q -DskipTests package
+EXPOSE 8080
+CMD ["java", "-jar", "target/app.jar"]
