@@ -17,11 +17,12 @@ ARG BASE_IMAGE=alpine:3.22
 FROM ${JDK_IMAGE} AS build
 WORKDIR /workspace
 
-# (1) 의존성 레이어 캐시: pom.xml·wrapper만 먼저 복사 → 소스만 바뀌면 이 단계는 캐시 재사용
+# (1) 의존성 캐시: Maven 저장소(~/.m2)를 BuildKit 캐시 마운트에 둔다 → 소스가 바뀌어도 의존성을 다시 받지 않는다
+#     예전에는 `mvnw dependency:go-offline` 으로 의존성 레이어를 따로 만들었는데, 이 단계 하나가 처음 빌드의
+#     5분 이상을 차지했다(모든 플러그인까지 내려받고 확인한다). 캐시 마운트와 역할이 겹쳐서 뺐다.
 COPY --chmod=0755 mvnw ./
 COPY .mvn/ .mvn/
 COPY pom.xml ./
-RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -q dependency:go-offline
 
 # (2) 소스 복사 후 패키징 (테스트는 CI/`mvn verify`에서 별도로 돈다)
 COPY src/ src/
