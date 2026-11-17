@@ -47,6 +47,7 @@ patches:
       value:
         maxSkew: 1
         topologyKey: topology.kubernetes.io/zone
+        minDomains: 2      # 영역이 하나뿐이면 두 번째 Pod를 두지 않는다 → 다른 영역에 노드가 생긴다
         whenUnsatisfiable: DoNotSchedule
         labelSelector:
           matchLabels:
@@ -58,6 +59,7 @@ patches:
       value:
         maxSkew: 1
         topologyKey: topology.kubernetes.io/zone
+        minDomains: 2      # 영역이 하나뿐이면 두 번째 Pod를 두지 않는다 → 다른 영역에 노드가 생긴다
         whenUnsatisfiable: DoNotSchedule
         labelSelector:
           matchLabels:
