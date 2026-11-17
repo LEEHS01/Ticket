@@ -1,0 +1,54 @@
+# 선택 과제: eks-sm overlay에서 MySQL Pod를 빼고 Amazon RDS를 쓴다.  먼저 infra/eks/rds.sh 를 실행한다.
+#   RDS=$(aws rds describe-db-instances --db-instance-identifier ticketing-rds --query 'DBInstances[0].Endpoint.Address' --output text)
+#   kubectl kustomize k8s/overlays/eks-rds | sed "s/ACCOUNT_ID/$ACCOUNT/g; s/RDS_ENDPOINT/$RDS/g" | kubectl apply -f -
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- ../eks-sm
+
+patches:
+# DB 주소를 RDS로 바꾸고 TLS 접속을 강제한다
+- target: {kind: ConfigMap, name: ticketing-config}
+  patch: |-
+    - op: replace
+      path: /data/DB_HOST
+      value: RDS_ENDPOINT
+    - op: add
+      path: /data/DB_SSL_MODE
+      value: REQUIRED
+# 클러스터 안의 MySQL 관련 리소스는 만들지 않는다
+- patch: |-
+    $patch: delete
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: mysql
+      namespace: ticketing
+- patch: |-
+    $patch: delete
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: mysql
+      namespace: ticketing
+- patch: |-
+    $patch: delete
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: mysql-data
+      namespace: ticketing
+- patch: |-
+    $patch: delete
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: mysql-init
+      namespace: ticketing
+- patch: |-
+    $patch: delete
+    apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: mysql-allow-app
+      namespace: ticketing
