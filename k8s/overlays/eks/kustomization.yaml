@@ -79,3 +79,11 @@ patches:
     - op: replace
       path: /spec/template/spec/containers/0/lifecycle/preStop/sleep/seconds
       value: 20
+# Auto Mode는 노드를 줄이거나 바꿀 때 Pod를 다른 노드로 옮긴다. MySQL은 Pod가 1개라 옮기는 동안
+# 서비스가 끊기므로, 이 Pod가 있는 노드는 자동 정리 대상에서 뺀다.
+- target: {kind: Deployment, name: mysql}
+  patch: |-
+    - op: add
+      path: /spec/template/metadata/annotations
+      value:
+        karpenter.sh/do-not-disrupt: "true"
