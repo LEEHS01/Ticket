@@ -37,16 +37,15 @@ SUBNETS=$(aws ec2 describe-subnets \
   --query 'Subnets[].SubnetId' --output text | tr '\t' ',')
 echo "private subnets: $SUBNETS"
 
-# 3. 클러스터 생성 (Auto Mode: 노드 · 로드밸런서 · EBS 볼륨을 EKS가 관리)
-aws eks create-cluster --name $CLUSTER --kubernetes-version $K8S_VERSION \
-  --role-arn arn:aws:iam::$ACCOUNT:role/$CLUSTER_ROLE \
-  --resources-vpc-config subnetIds=$SUBNETS,endpointPublicAccess=true,endpointPrivateAccess=true \
-  --access-config authenticationMode=API,bootstrapClusterCreatorAdminPermissions=true \
-  --compute-config "{\"enabled\":true,\"nodePools\":[\"general-purpose\",\"system\"],\"nodeRoleArn\":\"arn:aws:iam::$ACCOUNT:role/$NODE_ROLE\"}" \
-  --kubernetes-network-config '{"elasticLoadBalancing":{"enabled":true}}' \
-  --storage-config '{"blockStorage":{"enabled":true}}' > /dev/null
-echo "cluster create requested: $CLUSTER (10분쯤 걸린다)"
-aws eks wait cluster-active --name $CLUSTER
+# 3. 클러스터 생성 (Auto Mode: 노드 · 로드밸런서 · EBS 볼륨을 EKS가 관리). 이미 있으면 건너뛴다
+if aws eks describe-cluster --name $CLUSTER > /dev/null 2>&1; then
+  echo "cluster already exists: $CLUSTER"
+else
+  aws eks create-cluster --name $CLUSTER --kubernetes-version $K8S_VERSION     --role-arn arn:aws:iam::$ACCOUNT:role/$CLUSTER_ROLE     --resources-vpc-config subnetIds=$SUBNETS,endpointPublicAccess=true,endpointPrivateAccess=true     --access-config authenticationMode=API,bootstrapClusterCreatorAdminPermissions=true     --compute-config "{\"enabled\":true,\"nodePools\":[\"general-purpose\",\"system\"],\"nodeRoleArn\":\"arn:aws:iam::$ACCOUNT:role/$NODE_ROLE\"}"     --kubernetes-network-config '{"elasticLoadBalancing":{"enabled":true}}'     --storage-config '{"blockStorage":{"enabled":true}}' > /dev/null
+  echo "cluster create requested: $CLUSTER (10~15분 걸린다)"
+fi
+# 기다리는 중 연결이 끊기면 wait가 실패하므로 될 때까지 다시 기다린다
+until aws eks wait cluster-active --name $CLUSTER; do sleep 10; done
 aws eks describe-cluster --name $CLUSTER --query 'cluster.{name:name,status:status,version:version,autoMode:computeConfig.enabled}' --output table
 
 # 4. kubectl 접속 설정
