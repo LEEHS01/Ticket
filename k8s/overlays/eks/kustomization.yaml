@@ -1,0 +1,38 @@
+# ④ EKS용. 계정 ID는 저장소에 적지 않고 적용할 때 넣는다:
+#   ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+#   kubectl kustomize k8s/overlays/eks | sed "s/ACCOUNT_ID/$ACCOUNT/g" | kubectl apply -f -
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- ../../base
+- storageclass.yaml
+- ingress.yaml
+
+# 이미지를 Docker Hub에서 ECR로 바꾼다 (backend Deployment와 migrate Job 모두 바뀐다)
+images:
+- name: harpda/ticketing-backend
+  newName: ACCOUNT_ID.dkr.ecr.ap-northeast-2.amazonaws.com/ticketing-backend
+- name: harpda/ticketing-frontend
+  newName: ACCOUNT_ID.dkr.ecr.ap-northeast-2.amazonaws.com/ticketing-frontend
+
+patches:
+# EBS 볼륨은 ext4로 포맷되어 최상위에 lost+found 디렉터리가 있다. MySQL은 데이터 디렉터리가
+# 비어 있지 않으면 초기화를 거부하므로, 볼륨 안의 하위 디렉터리(mysql)를 데이터 디렉터리로 쓴다.
+- target: {kind: Deployment, name: mysql}
+  patch: |-
+    - op: add
+      path: /spec/template/spec/containers/0/volumeMounts/0/subPath
+      value: mysql
+# ALB 대상 그룹의 상태 확인 경로. backend는 /readyz, frontend는 /healthz
+- target: {kind: Service, name: backend}
+  patch: |-
+    - op: add
+      path: /metadata/annotations
+      value:
+        alb.ingress.kubernetes.io/healthcheck-path: /readyz
+- target: {kind: Service, name: frontend}
+  patch: |-
+    - op: add
+      path: /metadata/annotations
+      value:
+        alb.ingress.kubernetes.io/healthcheck-path: /healthz

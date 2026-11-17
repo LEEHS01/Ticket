@@ -1,0 +1,12 @@
+# 두 환경(EC2 kubeadm, EKS)에 공통인 리소스. 직접 적용하지 않고 overlays/ 에서 불러 쓴다.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- namespace.yaml
+- configmap.yaml
+- mysql.yaml
+- redis.yaml
+- migrate-job.yaml
+- backend.yaml
+- frontend.yaml
+- networkpolicy.yaml
