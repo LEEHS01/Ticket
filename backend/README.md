@@ -60,7 +60,12 @@ docker run --rm --read-only --tmpfs /tmp --network tkbe-dev_default `
   ticketing-backend migrate
 ```
 
-로그 마지막 줄 예: `마이그레이션·시드 완료: 공연 12개·회차 25개 upsert, 새 좌석 3808석, 새 시드 예매 292건, 시연 계정 생성·갱신` (두 번째부터는 0석·0건).
+로그 마지막 줄 예(새 DB): `마이그레이션·시드 완료: 공연 18개·회차 40개 upsert, 새 좌석 6082석, 새 시드 예매 517건, 시연 계정 생성·갱신` (두 번째부터는 0석·0건).
+공연 12개였던 기존 DB에 돌리면 새 공연 6개분만 추가됩니다(실측: 새 좌석 2274석, 새 시드 예매 225건).
+
+- **공연 id는 연속으로 매겨집니다**(포스터 파일 `frontend/public/posters/{id}.webp`와 맞추기 위해). 공연 upsert는 "slug로 조회 → 있으면 UPDATE, 없으면 INSERT"라 다시 돌려도 id(AUTO_INCREMENT)를 소모하지 않습니다.
+  예전 방식(`INSERT … ON DUPLICATE KEY UPDATE`)은 갱신만 해도 id를 하나씩 소모해서, migrate를 세 번 돌린 DB는 다음 id가 49였습니다.
+  이런 기존 DB를 위해 시드 시작 시 공연 테이블의 AUTO_INCREMENT가 `최대 id + 1`보다 크면 되돌립니다(로그: `공연 id 카운터를 49 → 13로 되돌림`). 새 공연은 반드시 `SHOWS` 목록 **맨 끝**에 붙입니다.
 
 - **시연 계정**: `SEED_DEMO_EMAIL`과 `SEED_DEMO_PASSWORD`가 **둘 다** 있을 때만 그 값으로 만들고(이미 있으면 비밀번호·이름 갱신), 하나라도 없으면 건너뜁니다. 비밀번호는 코드·SQL·로그에 남지 않습니다.
 - **미리 판매된 시드 좌석**은 `seed-system@ticketing.invalid` 계정 소유입니다. 이 계정은 `login_enabled = FALSE`이고 비밀번호 해시가 BCrypt 형식이 아니라(`!`) 어떤 비밀번호로도 로그인할 수 없습니다(V2 마이그레이션이 만듦).
@@ -81,6 +86,12 @@ docker run --rm --read-only --tmpfs /tmp --network tkbe-dev_default `
 | CLASSIC | 가을 실내악의 밤 | 판매 중 |
 | CLASSIC | 미리내 청년 오케스트라 정기 연주회 | 오픈 예정(6일 뒤) |
 | CLASSIC | 피아노 리사이틀 〈물의 기억〉 | 판매 중 |
+| CONCERT | 노을빛 재즈 쿼텟 〈밤 열한 시〉 (id 13) | 판매 중 |
+| CONCERT | 겨울맞이 포크 콘서트 〈첫눈 오는 날〉 (id 14) | 판매 중 |
+| MUSICAL | 뮤지컬 〈달빛 세탁소〉 (id 15) | 판매 중(4회차) |
+| PLAY | 연극 〈버스는 여덟 시에 떠난다〉 (id 16) | 판매 중(첫 회차는 실행 당일 20:00) |
+| CLASSIC | 첼로와 피아노의 밤 〈긴 겨울의 노래〉 (id 17) | 판매 중 |
+| MUSICAL | 뮤지컬 〈고양이 우체부〉 (id 18) | 판매 중 |
 
 **좌석 배치 템플릿**(`migrate/VenueLayout.java`, 공연장마다 하나. 같은 공연장 이름은 같은 템플릿):
 - `SMALL` 소극장 — 8행 × 12석 직사각형, 통로 1개(6번 뒤). 96석
@@ -153,7 +164,7 @@ docker compose -f docker-compose.dev.yml down      # 데이터 볼륨까지 지�
 |---|---|---|---|
 | 서비스 단위 테스트 | `AuthServiceTest`, `SessionAndCsrfTest`, `ShowServiceTest`, `QueueServiceTest`, `SeatServiceTest`, `ReservationServiceTest`, `VenueLayoutTest`, `EmailPrivacyAndCodeTest` | `test` | 없음(가짜 저장소 주입) |
 | HTTP 계층 테스트 | `ApiWebTest` (MockMvc, 세션은 MockHttpSession) | `test` | 없음 |
-| 통합 테스트 | `it/AuthSessionIT`, `it/SeatConcurrencyIT`, `it/QueueIT` | `verify` | 실제 MySQL·Redis |
+| 통합 테스트 | `it/AuthSessionIT`, `it/SeatConcurrencyIT`, `it/QueueIT`, `migrate/SeedIdContinuityIT` | `verify` | 실제 MySQL·Redis |
 
 통합 테스트가 확인하는 것(실제 MySQL·Redis·Lua·HTTP):
 1. **애플리케이션 인스턴스 2개**(같은 Redis)를 띄우고, 인스턴스 1에서 받은 세션 쿠키를 인스턴스 2에 보내도 **로그인이 유지된다**. 세션 키가 Redis에 있고 TTL이 30분이며, 로그아웃하면 Redis에서 지워진다.
@@ -492,6 +503,6 @@ v3에서 Spring Session·spring-security-crypto가 늘었지만 의존성 레이
 - 세션 값은 Spring Session 기본(JDK 직렬화)으로 저장됩니다. 넣는 값이 `Long`·`String` 둘뿐이라 문제는 없지만, Redis에 쓰기 권한을 가진 쪽은 신뢰 범위 안에 있어야 합니다(Redis 비밀번호·네트워크 정책 필수).
 - 쿠키 이름에 `__Host-` 접두사(도메인·경로 고정 강제)를 쓰지 않았습니다. 로컬 http에서는 `Secure` 없이 쓸 수 없기 때문입니다. 운영 https만 있다면 `__Host-TKT_SESSION`으로 바꾸는 것을 고려하세요.
 - 로그인 잠금은 계정 단위라, 남의 이메일로 일부러 5번 틀려 15분 동안 잠그는 방해가 가능합니다(IP당 strict 30/분으로 완화). 더 강하게 하려면 IP+계정 조합이나 CAPTCHA가 필요합니다.
-- 목록·상세는 요청마다 전체 좌석을 집계합니다(시드 기준 약 3,800석, 수 ms).
+- 목록·상세는 요청마다 전체 좌석을 집계합니다(시드 기준 약 6,100석, 수 ms).
 - 요청 제한은 고정 창이라 창 경계에서 순간적으로 최대 2배까지 허용될 수 있습니다. Redis 장애 시에는 제한을 건너뜁니다(fail-open). Redis가 죽으면 로그인·대기열·선점도 동작하지 않으므로 `/readyz`가 503이 됩니다.
 - `DB_SSL_MODE=PREFERRED`는 암호화하되 인증서를 검증하지 않습니다. RDS에서 `VERIFY_IDENTITY`를 쓰려면 RDS CA를 트러스트스토어에 넣어야 합니다.
