@@ -1,4 +1,4 @@
-# EKS Auto Mode는 StorageClass를 만들어 두지 않는다. EBS gp3 볼륨을 만드는 StorageClass를 기본으로 둔다
+# EKS Auto Mode 클러스터에는 기본 StorageClass가 없다(기본 지정이 없는 gp2 하나만 있다). EBS gp3 볼륨을 만드는 StorageClass를 기본으로 둔다
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
