@@ -68,3 +68,6 @@ spec:
       - name: init
         configMap:
           name: mysql-init
+          # 실행 권한을 준다. 실행 권한이 없으면 MySQL 이미지의 entrypoint가 스크립트를 자기 셸로 읽어 들여(source),
+          # 스크립트의 set -u 가 entrypoint에 적용되고 entrypoint가 unbound variable 오류로 종료한다
+          defaultMode: 0555
