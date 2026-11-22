@@ -30,7 +30,7 @@ foreach ($group in @(@('cp'), @('worker1', 'worker2'))) {
 }
 
 # 내 IP 규칙(SSH 22, NodePort)을 현재 IP로 바꾼다
-$MyIp = "$((Invoke-RestMethod -Uri 'https://checkip.amazonaws.com').Trim())/32"
+$MyIp = "$((curl.exe -4 -s https://checkip.amazonaws.com).Trim())/32"   # Invoke-RestMethod는 캐시된 예전 IP를 돌려줄 수 있어 curl.exe를 쓴다
 $SgId = Invoke-Aws ec2 describe-security-groups --filters $FOrg $FProject `
   --query 'SecurityGroups[0].GroupId' --output text
 $Rules = Invoke-Aws ec2 describe-security-groups --group-ids $SgId --output json | ConvertFrom-Json

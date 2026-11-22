@@ -19,3 +19,7 @@ local/.run/
 *.iml
 .DS_Store
 Thumbs.db
+
+# 노드 접속용 SSH 설정 (공인 IP가 들어가므로 올리지 않는다)
+infra/aws/ssh_config
+infra/aws/known_hosts

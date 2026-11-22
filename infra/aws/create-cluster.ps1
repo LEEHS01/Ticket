@@ -47,7 +47,7 @@ if ((Invoke-Aws ec2 describe-vpcs --filters $FOrg $FProject --query 'length(Vpcs
   exit 1
 }
 
-$MyIp = "$((Invoke-RestMethod -Uri 'https://checkip.amazonaws.com').Trim())/32"
+$MyIp = "$((curl.exe -4 -s https://checkip.amazonaws.com).Trim())/32"   # Invoke-RestMethod는 캐시된 예전 IP를 돌려줄 수 있어 curl.exe를 쓴다
 
 $AmiId = Invoke-Aws ec2 describe-images --owners $AmiOwner `
   --filters 'Name=name,Values=Rocky-9-EC2-Base-9.*' 'Name=architecture,Values=x86_64' `
