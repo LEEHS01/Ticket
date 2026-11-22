@@ -1,0 +1,26 @@
+# 두 클러스터(kubeadm, EKS)에 공통인 리소스. 직접 적용하지 않고 overlays 에서 불러 쓴다
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- namespace.yaml
+- config.yaml
+- serviceaccount.yaml
+- mysql-init.yaml
+- mysql-pvc.yaml
+- mysql-deployment.yaml
+- mysql-service.yaml
+- redis-deployment.yaml
+- redis-service.yaml
+- migrate-job.yaml
+- backend-deployment.yaml
+- backend-service.yaml
+- frontend-deployment.yaml
+- frontend-service.yaml
+- pdb.yaml
+
+# 이미지 버전은 여기 한 곳에서 정한다. backend Deployment와 migrate Job이 같은 backend 이미지를 쓴다
+images:
+- name: harpda/ticketing-backend
+  newTag: "3.0"
+- name: harpda/ticketing-frontend
+  newTag: "3.0"

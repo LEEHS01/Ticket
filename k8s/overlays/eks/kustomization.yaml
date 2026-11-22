@@ -1,0 +1,35 @@
+# EKS용. 계정 ID는 저장소에 적지 않고 적용할 때 넣는다
+#   ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+#   kubectl kustomize k8s/overlays/eks | sed "s/ACCOUNT_ID/$ACCOUNT/" | kubectl apply -f -
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- ../../base
+- storageclass.yaml
+- ingress.yaml
+
+# 이미지를 Docker Hub가 아니라 ECR에서 받는다. 태그는 base에서 정한 값을 그대로 쓴다
+images:
+- name: harpda/ticketing-backend
+  newName: ACCOUNT_ID.dkr.ecr.ap-northeast-2.amazonaws.com/ticketing-backend
+- name: harpda/ticketing-frontend
+  newName: ACCOUNT_ID.dkr.ecr.ap-northeast-2.amazonaws.com/ticketing-frontend
+
+patches:
+# ALB가 대상 Pod의 상태를 확인하는 경로
+- target:
+    kind: Service
+    name: backend
+  patch: |-
+    - op: add
+      path: /metadata/annotations
+      value:
+        alb.ingress.kubernetes.io/healthcheck-path: /readyz
+- target:
+    kind: Service
+    name: frontend
+  patch: |-
+    - op: add
+      path: /metadata/annotations
+      value:
+        alb.ingress.kubernetes.io/healthcheck-path: /healthz

@@ -17,6 +17,7 @@ spec:
     kind: IngressClassParams
     name: alb
 ---
+# 경로로 나눈다. /api 는 backend로 바로 보내고, 나머지는 frontend로 보낸다
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -29,6 +30,13 @@ spec:
   rules:
   - http:
       paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: 8080
       - path: /
         pathType: Prefix
         backend:

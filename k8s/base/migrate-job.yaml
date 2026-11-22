@@ -28,7 +28,7 @@ spec:
         command: ["sh", "-c", "until nc -z -w 2 mysql 3306; do echo waiting for mysql; sleep 3; done"]
       containers:
       - name: migrate
-        image: harpda/ticketing-backend:3.0
+        image: harpda/ticketing-backend
         args: ["migrate"]
         securityContext:
           allowPrivilegeEscalation: false

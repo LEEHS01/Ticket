@@ -42,7 +42,7 @@ spec:
         - pod-template-hash
       containers:
       - name: backend
-        image: harpda/ticketing-backend:3.0
+        image: harpda/ticketing-backend
         ports:
         - containerPort: 8080
         securityContext:
