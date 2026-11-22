@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ④ EKS Auto Mode 클러스터 생성. VPC 스택(ticketing-eks-vpc)을 먼저 만든 뒤 실행한다.
+# EKS Auto Mode 클러스터 생성 (문서 4). VPC 스택(ticketing-eks-vpc)을 먼저 만든 뒤 실행한다.
 #   aws cloudformation create-stack --stack-name ticketing-eks-vpc \
 #     --template-url https://s3.us-west-2.amazonaws.com/amazon-eks/cloudformation/2020-10-29/amazon-eks-vpc-private-subnets.yaml
 # 계정 ID는 화면에 찍지 않는다.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ④ 자원 삭제. 순서: 워크로드(ALB · EBS 볼륨) → 클러스터 → VPC 스택 → ECR 저장소
+# EKS 자원 삭제 (문서 4). 순서: 워크로드(ALB · EBS 볼륨) → 클러스터 → VPC 스택 → ECR 저장소
 set -euo pipefail
 CLUSTER=ticketing-eks
 STACK=ticketing-eks-vpc

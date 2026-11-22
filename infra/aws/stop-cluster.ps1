@@ -1,4 +1,4 @@
-﻿# ③ 클러스터 정지: worker → cp 순서 (원본: 수업 실습의 aws/stop-cluster.ps1, 자원 이름만 바꿈)
+﻿# kubeadm 클러스터(문서 3) 정지: worker → cp 순서 (원본: 수업 실습의 aws/stop-cluster.ps1, 자원 이름만 바꿈)
 # 실행 전: $env:AWS_PROFILE = '<프로필>'. 정지 중에는 EBS 볼륨 요금만 나온다
 
 $env:AWS_REGION = if ($env:AWS_REGION) { $env:AWS_REGION } else { 'ap-northeast-2' }

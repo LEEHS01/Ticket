@@ -1,4 +1,4 @@
-﻿# ③ 클러스터 시작: cp → worker 순서. 내 공인 IP가 바뀌었으면 SSH · NodePort 규칙을 새 IP로 바꾼다
+﻿# kubeadm 클러스터(문서 3) 시작: cp → worker 순서. 내 공인 IP가 바뀌었으면 SSH · NodePort 규칙을 새 IP로 바꾼다
 # 실행 전: $env:AWS_PROFILE = '<프로필>'. 공인 IP는 시작할 때마다 바뀐다
 
 $env:AWS_REGION = if ($env:AWS_REGION) { $env:AWS_REGION } else { 'ap-northeast-2' }

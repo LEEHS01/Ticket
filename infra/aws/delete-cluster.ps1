@@ -1,4 +1,4 @@
-﻿# ③ 클러스터 삭제: Organization=ticketing · Project=k8s 태그 자원을 생성의 역순으로 삭제한다
+﻿# kubeadm 클러스터(문서 3) 삭제: Organization=ticketing · Project=k8s 태그 자원을 생성의 역순으로 삭제한다
 # 원본: 수업 실습의 aws/delete-cluster.ps1. 자원 이름을 바꾸고 키 파일 권한 처리를 더했다
 # 실행 전: $env:AWS_PROFILE = '<프로필>'
 

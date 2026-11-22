@@ -1,4 +1,4 @@
-﻿# 미리내 마당 ③ 단계 클러스터 (AWS EC2): cp · worker1 · worker2
+﻿# 미리내 마당 kubeadm 클러스터용 EC2 (문서 3): cp · worker1 · worker2
 # 원본: 수업 실습의 aws/create-cluster.ps1. 자원 이름을 ticketing-k8s-* 로 바꾸고,
 # 보안 그룹을 노드 사이 전체 허용 → 필요한 포트만 여는 규칙으로 바꿨다
 #
@@ -18,7 +18,7 @@ $KeyFile = Join-Path $SshDir "$KeyName.pem"
 $InstanceType = 't3.medium'
 $VolumeSize = 30
 $AmiOwner = '792107900819'   # Rocky Enterprise Software Foundation
-$NodePort = 30080            # gateway Service의 NodePort. 밖에서 여는 앱 포트는 이것 하나다
+$NodePort = 30080            # frontend Service의 NodePort. 밖에서 여는 앱 포트는 이것 하나다
 
 $Nodes = @(
   @{ Name = 'cp';      Ip = '192.168.56.10' },
@@ -83,7 +83,7 @@ Write-Host "Route table: $RtbId"
 
 # 보안 그룹: 필요한 포트만 연다
 #   노드 사이(같은 보안 그룹): API 서버 6443, kubelet 10250, Calico BGP 179, Calico IP-in-IP(IP 프로토콜 4)
-#   내 IP: SSH 22, gateway NodePort 하나
+#   내 IP: SSH 22, frontend NodePort 하나
 #   etcd(2379-2380)와 scheduler · controller-manager(10257 · 10259)는 cp 안에서만 쓰므로 열지 않는다
 $SgId = Invoke-Aws ec2 create-security-group --vpc-id $VpcId --group-name "$Prefix-sg-node" `
   --description 'ticketing kubeadm cluster nodes' `
@@ -96,7 +96,7 @@ Invoke-Aws ec2 authorize-security-group-ingress --group-id $SgId `
                    "IpProtocol=4,UserIdGroupPairs=[{GroupId=$SgId,Description=calico-ipip}]" | Out-Null
 Invoke-Aws ec2 authorize-security-group-ingress --group-id $SgId `
   --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=$MyIp,Description=ssh}]" `
-                   "IpProtocol=tcp,FromPort=$NodePort,ToPort=$NodePort,IpRanges=[{CidrIp=$MyIp,Description=gateway-nodeport}]" | Out-Null
+                   "IpProtocol=tcp,FromPort=$NodePort,ToPort=$NodePort,IpRanges=[{CidrIp=$MyIp,Description=frontend-nodeport}]" | Out-Null
 Write-Host "Security group: $SgId (SSH · NodePort $NodePort 허용: $MyIp)"
 
 # 키 페어: 없으면 만들고 개인 키를 로컬에 저장한다
