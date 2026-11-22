@@ -9,8 +9,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 25%
-      maxUnavailable: 25%
+      maxSurge: 1          # 새 Pod를 하나 먼저 띄운다
+      maxUnavailable: 0    # 새 Pod가 Ready가 되기 전에는 기존 Pod를 줄이지 않는다
   selector:
     matchLabels:
       app: frontend
@@ -21,9 +21,14 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: harpda/ticketing-frontend:2.0
+        image: harpda/ticketing-frontend:2.1
         ports:
         - containerPort: 8080
+        lifecycle:
+          # 종료 신호를 보내기 전에 5초 기다린다. 그동안 이 Pod가 Service 대상에서 빠져 새 요청이 오지 않는다
+          preStop:
+            sleep:
+              seconds: 5
         livenessProbe:
           httpGet:
             path: /healthz
