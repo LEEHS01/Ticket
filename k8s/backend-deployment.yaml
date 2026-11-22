@@ -37,6 +37,9 @@ spec:
         labelSelector:
           matchLabels:
             app: backend
+        # 같은 ReplicaSet의 Pod끼리만 센다. 이 줄이 없으면 교체 중에 예전 Pod까지 세어 새 Pod가 한 노드에 몰린다
+        matchLabelKeys:
+        - pod-template-hash
       containers:
       - name: backend
         image: harpda/ticketing-backend:3.0
