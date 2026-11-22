@@ -1,0 +1,80 @@
+# 클러스터 밖에서 들어오는 입구를 Gateway API로 만든다. 구현체는 Envoy Gateway를 쓴다.
+# 먼저 Envoy Gateway를 설치한다:
+#   kubectl apply --server-side -f https://github.com/envoyproxy/gateway/releases/download/v1.9.3/install.yaml
+#
+# EC2에 직접 만든 클러스터에는 로드밸런서가 없다. Envoy 프록시의 Service를 NodePort 30080으로 고정한다
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: nodeport
+  namespace: ticketing
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyDeployment:
+        replicas: 2                 # 입구가 Pod 하나에 묶이지 않게 2개를 둔다
+      envoyService:
+        type: NodePort
+        externalTrafficPolicy: Cluster
+        patch:
+          type: StrategicMerge
+          value:
+            spec:
+              ports:
+              - name: http-80
+                port: 80
+                protocol: TCP
+                nodePort: 30080     # 보안 그룹에서 내 IP에만 연 포트
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: eg
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: ticketing
+  namespace: ticketing
+spec:
+  gatewayClassName: eg
+  infrastructure:
+    parametersRef:
+      group: gateway.envoyproxy.io
+      kind: EnvoyProxy
+      name: nodeport
+  listeners:
+  - name: http
+    protocol: HTTP
+    port: 80
+    allowedRoutes:
+      namespaces:
+        from: Same
+---
+# 경로로 나눈다. /api 는 backend로 바로 보내고, 나머지는 frontend로 보낸다
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: ticketing
+  namespace: ticketing
+spec:
+  parentRefs:
+  - name: ticketing
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api
+    backendRefs:
+    - name: backend
+      port: 8080
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: frontend
+      port: 80
