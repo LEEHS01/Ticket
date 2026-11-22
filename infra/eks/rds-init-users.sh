@@ -2,10 +2,10 @@
 # RDS에 계정 두 개를 만든다. RDS는 클러스터 밖에서 접속할 수 없어 클러스터 안의 임시 Pod에서 실행한다. 저장소 루트에서 실행한다.
 #   ticketing     : 스키마 소유자 (migrate Job)
 #   ticketing_app : SELECT, INSERT, UPDATE만 (backend)
-# 비밀번호는 .env 의 값을 임시 Secret으로 넘기고, 끝나면 Pod와 Secret을 지운다. 화면에 출력하지 않는다
+# 비밀번호는 .env 와 .env.rds 의 값을 임시 Secret으로 넘기고, 끝나면 Pod와 Secret을 지운다. 화면에 출력하지 않는다
 set -euo pipefail
 RDS=$(aws rds describe-db-instances --db-instance-identifier ticketing-rds --query 'DBInstances[0].Endpoint.Address' --output text)
-set -a; . ./.env; set +a
+set -a; . ./.env; . ./.env.rds; set +a
 cleanup() { kubectl delete pod rds-init -n ticketing --ignore-not-found --now > /dev/null; kubectl delete secret rds-init -n ticketing --ignore-not-found > /dev/null; }
 trap cleanup EXIT
 
