@@ -1,0 +1,22 @@
+# 노드를 비울 때(drain) backend와 frontend Pod가 한꺼번에 내보내지지 않게 한다. 각각 최소 1개는 Ready로 남긴다
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend
+  namespace: ticketing
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: backend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: frontend
+  namespace: ticketing
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: frontend
