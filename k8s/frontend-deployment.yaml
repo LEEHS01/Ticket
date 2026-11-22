@@ -19,11 +19,41 @@ spec:
       labels:
         app: frontend
     spec:
+      serviceAccountName: frontend         # 토큰을 넣지 않는 전용 ServiceAccount (serviceaccount.yaml)
+      # 이미지의 nginx 사용자(101)로 실행한다
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      # Pod 2개를 서로 다른 노드에 둔다
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: frontend
       containers:
       - name: frontend
-        image: harpda/ticketing-frontend:2.1
+        image: harpda/ticketing-frontend:3.0
         ports:
         - containerPort: 8080
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true     # nginx의 pid 파일과 임시 파일은 /tmp 에 둔다
+          capabilities:
+            drop: ["ALL"]
+        resources:
+          requests:
+            cpu: 50m
+            memory: 32Mi
+          limits:
+            memory: 64Mi
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
         lifecycle:
           # 종료 신호를 보내기 전에 5초 기다린다. 그동안 이 Pod가 Service 대상에서 빠져 새 요청이 오지 않는다
           preStop:
@@ -47,3 +77,8 @@ spec:
           periodSeconds: 5
           successThreshold: 1
           failureThreshold: 3
+      volumes:
+      - name: tmp
+        emptyDir:
+          medium: Memory
+          sizeLimit: 32Mi
