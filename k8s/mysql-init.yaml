@@ -1,0 +1,17 @@
+# MySQL 데이터 디렉터리가 비어 있을 때 한 번 실행되는 스크립트(/docker-entrypoint-initdb.d).
+# API 서버가 쓰는 계정 ticketing_app 을 만든다. 비밀번호는 Secret에서 환경 변수로 받는다.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-init
+  namespace: ticketing
+data:
+  01-init.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    : "${DB_APP_PASSWORD:?DB_APP_PASSWORD 가 필요합니다}"
+    mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" <<SQL
+    CREATE USER IF NOT EXISTS 'ticketing_app'@'%' IDENTIFIED BY '${DB_APP_PASSWORD}';
+    GRANT SELECT, INSERT, UPDATE ON ticketing.* TO 'ticketing_app'@'%';
+    FLUSH PRIVILEGES;
+    SQL

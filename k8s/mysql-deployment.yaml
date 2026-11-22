@@ -1,0 +1,70 @@
+# MySQL: Pod 1개 + PVC. 데이터는 PVC에 저장되어 Pod를 교체해도 남는다
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+  namespace: ticketing
+spec:
+  replicas: 1
+  # 기존 Pod를 먼저 종료한 뒤 새 Pod를 만든다. 두 MySQL이 같은 데이터 디렉터리를 동시에 쓰지 않게 한다
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+      - name: mysql
+        image: mysql:8.4
+        args:
+        - --character-set-server=utf8mb4
+        - --collation-server=utf8mb4_0900_ai_ci
+        - --default-time-zone=+00:00
+        ports:
+        - containerPort: 3306
+        env:
+        - name: MYSQL_DATABASE
+          value: ticketing
+        - name: MYSQL_USER                 # 스키마 소유자. migrate Job이 쓴다
+          value: ticketing
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ticketing-secret
+              key: MYSQL_ROOT_PASSWORD
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ticketing-secret
+              key: DB_OWNER_PASSWORD
+        - name: DB_APP_PASSWORD            # mysql-init 스크립트가 앱 계정을 만들 때 쓴다
+          valueFrom:
+            secretKeyRef:
+              name: ticketing-secret
+              key: DB_APP_PASSWORD
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/mysql
+        - name: init
+          mountPath: /docker-entrypoint-initdb.d
+          readOnly: true
+        # TCP(127.0.0.1)로 확인한다. 초기화 중인 임시 서버는 소켓만 열어 이 검사에 실패한다
+        readinessProbe:
+          exec:
+            command: ["sh", "-c", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$MYSQL_ROOT_PASSWORD\" --silent"]
+          initialDelaySeconds: 5
+          timeoutSeconds: 3
+          periodSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: mysql-data
+      - name: init
+        configMap:
+          name: mysql-init

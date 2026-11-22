@@ -1,0 +1,62 @@
+# API 서버. 로그인 세션이 Redis에 있어 Pod를 여러 개로 늘려도 로그인이 유지된다
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: ticketing
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%          # replicas 2에서는 올림해서 1. 새 Pod를 하나 더 만들 수 있다
+      maxUnavailable: 25%    # replicas 2에서는 내림해서 0. Ready인 Pod가 2개 아래로 내려가지 않는다
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+      - name: backend
+        image: harpda/ticketing-backend:2.0
+        ports:
+        - containerPort: 8080
+        envFrom:
+        - configMapRef:
+            name: ticketing-config
+        env:
+        - name: DB_USER                    # SELECT, INSERT, UPDATE만 가진 앱 계정
+          value: ticketing_app
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ticketing-secret
+              key: DB_APP_PASSWORD
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ticketing-secret
+              key: REDIS_PASSWORD
+        # 프로세스가 응답하지 않으면 컨테이너를 재시작한다
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 60
+          timeoutSeconds: 2
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        # MySQL과 Redis에 연결되지 않으면 Service 대상에서 뺀다(재시작하지 않는다)
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8080
+          initialDelaySeconds: 10
+          timeoutSeconds: 2
+          periodSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3

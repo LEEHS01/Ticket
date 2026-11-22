@@ -1,0 +1,12 @@
+# MySQL 데이터용 볼륨 요청. storageClassName을 적지 않아 기본 StorageClass를 쓴다
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-data
+  namespace: ticketing
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi

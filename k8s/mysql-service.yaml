@@ -1,0 +1,12 @@
+# type을 적지 않으면 ClusterIP다. 클러스터 안에서만 mysql:3306 으로 접근된다
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: ticketing
+spec:
+  selector:
+    app: mysql
+  ports:
+  - port: 3306
+    targetPort: 3306

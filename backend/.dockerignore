@@ -10,7 +10,7 @@ node_modules/
 *.iml
 *.log
 docker/
-docker-compose*.yml
 Dockerfile
 .dockerignore
 README.md
+mvnw.cmd
