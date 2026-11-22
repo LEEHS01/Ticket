@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="560" viewBox="0 0 1040 560" font-family="'Malgun Gothic','Noto Sans KR',sans-serif" font-size="15" fill="#111">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#111"/>
+    </marker>
+  </defs>
+  <rect width="1040" height="560" fill="#fff"/>
+
+  <rect x="20" y="215" width="130" height="70" rx="6" fill="#fff" stroke="#111" stroke-width="1.5"/>
+  <text x="85" y="245" text-anchor="middle" font-weight="bold">브라우저</text>
+  <text x="85" y="267" text-anchor="middle" font-size="13">내 PC</text>
+
+  <!-- VPC -->
+  <rect x="200" y="20" width="820" height="520" fill="none" stroke="#999" stroke-dasharray="6 4"/>
+  <text x="214" y="44" font-size="14" fill="#444">AWS VPC 192.168.0.0/16 · 퍼블릭 서브넷 192.168.56.0/24 · 보안 그룹: 내 IP → 22, 30080</text>
+
+  <!-- nodes -->
+  <rect x="220" y="60" width="780" height="60" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="236" y="85" font-weight="bold" font-size="14">EC2 3대 (Rocky Linux 9, t3.medium) · kubeadm v1.36.6 · containerd 2.4.2 · Calico</text>
+  <text x="236" y="107" font-size="13">cp 192.168.56.10 (control plane) · worker1 192.168.56.11 · worker2 192.168.56.12 · 모든 노드의 30080 포트가 NodePort</text>
+
+  <!-- namespace -->
+  <rect x="220" y="140" width="780" height="380" fill="#f6f6f6" stroke="#111" stroke-width="1.5"/>
+  <text x="236" y="166" font-weight="bold">Namespace ticketing</text>
+
+  <!-- frontend -->
+  <rect x="250" y="195" width="170" height="110" rx="6" fill="#fff" stroke="#111" stroke-width="1.5"/>
+  <text x="335" y="222" text-anchor="middle" font-weight="bold">frontend</text>
+  <text x="335" y="244" text-anchor="middle" font-size="13">Service NodePort 30080</text>
+  <text x="335" y="264" text-anchor="middle" font-size="13">Deployment · Pod 2개</text>
+  <text x="335" y="284" text-anchor="middle" font-size="13">nginx · /api 전달</text>
+
+  <!-- backend -->
+  <rect x="480" y="195" width="170" height="110" rx="6" fill="#fff" stroke="#111" stroke-width="1.5"/>
+  <text x="565" y="222" text-anchor="middle" font-weight="bold">backend</text>
+  <text x="565" y="244" text-anchor="middle" font-size="13">Service ClusterIP 8080</text>
+  <text x="565" y="264" text-anchor="middle" font-size="13">Deployment · Pod 2개</text>
+  <text x="565" y="284" text-anchor="middle" font-size="13">liveness · readiness</text>
+
+  <!-- mysql -->
+  <rect x="720" y="180" width="170" height="90" rx="6" fill="#fff" stroke="#111" stroke-width="1.5"/>
+  <text x="805" y="207" text-anchor="middle" font-weight="bold">mysql</text>
+  <text x="805" y="229" text-anchor="middle" font-size="13">Service ClusterIP 3306</text>
+  <text x="805" y="249" text-anchor="middle" font-size="13">Deployment · Pod 1개</text>
+
+  <!-- redis -->
+  <rect x="720" y="295" width="170" height="90" rx="6" fill="#fff" stroke="#111" stroke-width="1.5"/>
+  <text x="805" y="322" text-anchor="middle" font-weight="bold">redis</text>
+  <text x="805" y="344" text-anchor="middle" font-size="13">Service ClusterIP 6379</text>
+  <text x="805" y="364" text-anchor="middle" font-size="13">Deployment · Pod 1개</text>
+
+  <!-- pvc -->
+  <rect x="910" y="180" width="80" height="90" rx="6" fill="#fff" stroke="#111" stroke-width="1.5"/>
+  <text x="950" y="212" text-anchor="middle" font-weight="bold" font-size="13">PVC</text>
+  <text x="950" y="232" text-anchor="middle" font-size="12">2Gi</text>
+  <text x="950" y="250" text-anchor="middle" font-size="12">local-path</text>
+  <line x1="890" y1="225" x2="908" y2="225" stroke="#111" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- migrate -->
+  <rect x="480" y="335" width="170" height="50" rx="6" fill="#fff" stroke="#111" stroke-width="1.5" stroke-dasharray="5 3"/>
+  <text x="565" y="356" text-anchor="middle" font-weight="bold" font-size="14">migrate Job (1회)</text>
+  <text x="565" y="375" text-anchor="middle" font-size="12">스키마 생성 · 시드</text>
+  <line x1="650" y1="352" x2="735" y2="272" stroke="#111" stroke-width="1.2" stroke-dasharray="5 3" marker-end="url(#a)"/>
+
+  <!-- config -->
+  <rect x="250" y="425" width="290" height="70" rx="6" fill="#fff" stroke="#111" stroke-width="1.5"/>
+  <text x="395" y="452" text-anchor="middle" font-weight="bold" font-size="14">ConfigMap ticketing-config · mysql-init</text>
+  <text x="395" y="474" text-anchor="middle" font-size="13">주소 · 세션 설정 · 초기화 스크립트</text>
+
+  <rect x="570" y="425" width="320" height="70" rx="6" fill="#fff" stroke="#111" stroke-width="1.5"/>
+  <text x="730" y="452" text-anchor="middle" font-weight="bold" font-size="14">Secret ticketing-secret</text>
+  <text x="730" y="474" text-anchor="middle" font-size="13">MySQL 비밀번호 3개 · Redis 비밀번호</text>
+
+  <!-- arrows -->
+  <line x1="150" y1="250" x2="248" y2="250" stroke="#111" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="85" y="308" text-anchor="middle" font-size="12">http://노드 공인 IP:30080</text>
+  <line x1="420" y1="250" x2="478" y2="250" stroke="#111" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="449" y="241" text-anchor="middle" font-size="12">/api</text>
+  <line x1="650" y1="235" x2="718" y2="225" stroke="#111" stroke-width="1.5" marker-end="url(#a)"/>
+  <line x1="650" y1="270" x2="718" y2="335" stroke="#111" stroke-width="1.5" marker-end="url(#a)"/>
+</svg>
