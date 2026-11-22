@@ -1,23 +1,24 @@
-# 화면(정적 파일) + /api 프록시 이미지 (단일 스테이지)
-# nginx 이미지에는 Node.js가 없으므로, 먼저 호스트에서 정적 파일을 빌드한 뒤 이미지를 만든다
-#   VITE_APP_VERSION=2.0 npm run build         결과: dist/
-#   docker build -t ticketing-frontend:2.0 .
+# syntax=docker/dockerfile:1
+# 화면(정적 파일) + /api 프록시 이미지 (멀티스테이지)
+# Node 이미지에서 정적 파일을 빌드하고, nginx(alpine-slim) 이미지에는 결과만 넣는다
+#   docker build --build-arg APP_VERSION=3.0 -t ticketing-frontend:3.0 .
+FROM node:24-alpine AS build
+WORKDIR /app
+# 의존성 목록만 먼저 복사한다. 소스만 바뀌면 npm ci 레이어를 캐시에서 쓴다
+COPY package.json package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
+COPY index.html vite.config.ts tsconfig.json tsconfig.node.json ./
+COPY public ./public
+COPY src ./src
+COPY mock ./mock
+ARG APP_VERSION=dev
+ENV VITE_APP_VERSION=${APP_VERSION}
+RUN npm run build
 
-# nginx 공식 이미지
-FROM nginx:1.30
-
-# 기본 예제 페이지와 기본 서버 설정을 지운다
+FROM nginx:1.30-alpine-slim
 RUN rm -rf /usr/share/nginx/html/* /etc/nginx/conf.d/*
-
-# nginx 설정: 정적 파일 서빙, /api 는 backend:8080 으로 전달
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
 COPY nginx/security-headers.conf /etc/nginx/snippets/security-headers.conf
-
-# 호스트에서 빌드한 정적 파일
-COPY dist/ /usr/share/nginx/html/
-
-# 컨테이너가 여는 포트(문서용 표시)
+COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 8080
-
-# 기본 entrypoint 스크립트를 거치지 않고 nginx를 포그라운드로 실행한다
 ENTRYPOINT ["nginx", "-g", "daemon off;"]

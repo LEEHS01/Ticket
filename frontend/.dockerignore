@@ -1,14 +1,6 @@
-# 빌드 컨텍스트에는 Dockerfile이 COPY하는 것(dist/, nginx/)만 남긴다
+# 이미지 안에서 빌드하므로 소스는 넣고, 호스트의 빌드 결과(dist)와 의존성(node_modules)은 뺀다
 node_modules
-src
-public
-mock
-index.html
-package.json
-package-lock.json
-tsconfig.json
-tsconfig.node.json
-vite.config.ts
+dist
 .git
 .gitignore
 .env
