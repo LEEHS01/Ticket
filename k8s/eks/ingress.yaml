@@ -1,0 +1,38 @@
+# ALB로 노출한다. Auto Mode에 들어 있는 로드밸런서 컨트롤러가 Ingress를 보고 ALB를 만든다
+apiVersion: eks.amazonaws.com/v1
+kind: IngressClassParams
+metadata:
+  name: alb
+spec:
+  scheme: internet-facing        # 인터넷에서 접속하는 ALB. 공용 서브넷(kubernetes.io/role/elb 태그)에 만들어진다
+---
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: alb
+spec:
+  controller: eks.amazonaws.com/alb
+  parameters:
+    apiGroup: eks.amazonaws.com
+    kind: IngressClassParams
+    name: alb
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ticketing
+  namespace: ticketing
+  annotations:
+    alb.ingress.kubernetes.io/target-type: ip     # 노드를 거치지 않고 Pod IP로 바로 보낸다
+spec:
+  ingressClassName: alb
+  rules:
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 80
