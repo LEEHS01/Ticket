@@ -30,7 +30,8 @@ RUN jlink \
 
 # 3) 실행 이미지
 FROM ${BASE_IMAGE}
-RUN apk upgrade --no-cache
+# 실행 전용 사용자를 만든다. UID를 10001로 고정해 쿠버네티스의 runAsUser와 맞춘다
+RUN apk upgrade --no-cache  && addgroup -S -g 10001 app && adduser -S -D -H -u 10001 -G app -s /sbin/nologin app
 ENV JAVA_HOME=/opt/jre \
     PATH=/opt/jre/bin:$PATH \
     LANG=C.UTF-8 \
@@ -52,6 +53,8 @@ RUN DB_HOST=cds-training DB_USER=cds DB_PASSWORD=cds REDIS_HOST=cds-training \
 ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION}
 
+# 여기부터 root가 아닌 사용자로 실행한다
+USER 10001:10001
 EXPOSE 8080
 # 힙은 컨테이너 메모리 한도의 75%. OOM이면 바로 종료해 다시 시작되게 한다
 ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-XX:+ExitOnOutOfMemoryError", "-XX:SharedArchiveFile=/app/app.jsa", "-jar", "/app/app.jar"]
