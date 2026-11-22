@@ -1,0 +1,15 @@
+# 멀티스테이지용: 이미지 안에서 빌드하므로 소스는 넣고, 호스트의 빌드 결과와 의존성은 뺀다
+node_modules
+dist
+.git
+.gitignore
+.env
+.env.*
+*.local
+*.log
+.claude
+.vscode
+.idea
+README.md
+Dockerfile
+.dockerignore
