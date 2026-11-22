@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1060" height="620" viewBox="0 0 1060 620" font-family="'Malgun Gothic','Noto Sans KR',sans-serif" font-size="15" fill="#111">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#111"/>
+    </marker>
+  </defs>
+  <rect width="1060" height="620" fill="#fff"/>
+
+  <rect x="20" y="150" width="130" height="70" rx="6" fill="#fff" stroke="#111" stroke-width="1.5"/>
+  <text x="85" y="180" text-anchor="middle" font-weight="bold">브라우저</text>
+  <text x="85" y="202" text-anchor="middle" font-size="13">내 PC</text>
+
+  <rect x="20" y="300" width="130" height="80" rx="6" fill="#fff" stroke="#111" stroke-width="1.5"/>
+  <text x="85" y="328" text-anchor="middle" font-weight="bold" font-size="14">Route 53</text>
+  <text x="85" y="349" text-anchor="middle" font-size="12">nyannyanpunch.cloud</text>
+  <text x="85" y="367" text-anchor="middle" font-size="12">별칭 → ALB</text>
+  <line x1="85" y1="220" x2="85" y2="298" stroke="#111" stroke-width="1.2" stroke-dasharray="5 3" marker-end="url(#a)"/>
+  <text x="92" y="264" font-size="12">주소 조회</text>
+
+  <!-- VPC -->
+  <rect x="180" y="20" width="860" height="500" fill="none" stroke="#999" stroke-dasharray="6 4"/>
+  <text x="194" y="44" font-size="14" fill="#444">AWS VPC 192.168.0.0/16 · 가용 영역 2개</text>
+
+  <!-- public subnets -->
+  <rect x="200" y="60" width="170" height="440" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="285" y="84" text-anchor="middle" font-weight="bold" font-size="14">공용 서브넷 2개</text>
+
+  <rect x="215" y="125" width="140" height="125" rx="6" fill="#f6f6f6" stroke="#111" stroke-width="1.5"/>
+  <text x="285" y="152" text-anchor="middle" font-weight="bold">ALB</text>
+  <text x="285" y="174" text-anchor="middle" font-size="13">HTTPS 443</text>
+  <text x="285" y="194" text-anchor="middle" font-size="13">ACM 인증서</text>
+  <text x="285" y="214" text-anchor="middle" font-size="13">80 → 443 전환</text>
+  <text x="285" y="234" text-anchor="middle" font-size="13">대상 Pod IP</text>
+
+  <rect x="215" y="415" width="140" height="60" rx="6" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="285" y="441" text-anchor="middle" font-weight="bold" font-size="14">NAT 게이트웨이</text>
+  <text x="285" y="461" text-anchor="middle" font-size="12">영역마다 1개</text>
+
+  <!-- private subnets -->
+  <rect x="400" y="60" width="620" height="440" fill="#f6f6f6" stroke="#111" stroke-width="1.5"/>
+  <text x="416" y="84" font-weight="bold" font-size="14">사설 서브넷 2개</text>
+
+  <!-- cluster -->
+  <rect x="415" y="98" width="400" height="390" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="429" y="121" font-size="13">EKS Auto Mode 클러스터 ticketing-eks · Namespace ticketing</text>
+
+  <rect x="435" y="140" width="165" height="110" rx="6" fill="#fff" stroke="#111" stroke-width="1.5"/>
+  <text x="517" y="167" text-anchor="middle" font-weight="bold">frontend</text>
+  <text x="517" y="189" text-anchor="middle" font-size="13">Pod 2개</text>
+  <text x="517" y="209" text-anchor="middle" font-size="13">가용 영역마다 1개</text>
+  <text x="517" y="229" text-anchor="middle" font-size="13">nginx · 정적 파일</text>
+
+  <rect x="435" y="275" width="165" height="130" rx="6" fill="#fff" stroke="#111" stroke-width="1.5"/>
+  <text x="517" y="302" text-anchor="middle" font-weight="bold">backend</text>
+  <text x="517" y="324" text-anchor="middle" font-size="13">Pod 2 ~ 6개 (HPA)</text>
+  <text x="517" y="344" text-anchor="middle" font-size="13">가용 영역 2개에 분산</text>
+  <text x="517" y="364" text-anchor="middle" font-size="13">PDB · 전용 ServiceAccount</text>
+  <text x="517" y="384" text-anchor="middle" font-size="13">비root · 읽기 전용</text>
+
+  <rect x="640" y="300" width="160" height="80" rx="6" fill="#fff" stroke="#111" stroke-width="1.5"/>
+  <text x="720" y="327" text-anchor="middle" font-weight="bold">redis</text>
+  <text x="720" y="349" text-anchor="middle" font-size="13">Pod 1개</text>
+  <text x="720" y="369" text-anchor="middle" font-size="13">세션 · 좌석 선점</text>
+
+  <rect x="560" y="425" width="240" height="50" rx="6" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="680" y="447" text-anchor="middle" font-weight="bold" font-size="14">ConfigMap · Secret · migrate Job</text>
+  <text x="680" y="466" text-anchor="middle" font-size="12">Kustomize overlay: eks-https</text>
+
+  <!-- RDS -->
+  <rect x="840" y="275" width="165" height="130" rx="6" fill="#fff" stroke="#111" stroke-width="1.5"/>
+  <text x="922" y="302" text-anchor="middle" font-weight="bold">Amazon RDS</text>
+  <text x="922" y="324" text-anchor="middle" font-size="13">MySQL 8.4</text>
+  <text x="922" y="344" text-anchor="middle" font-size="13">외부 접속 불가</text>
+  <text x="922" y="364" text-anchor="middle" font-size="13">3306은 클러스터</text>
+  <text x="922" y="384" text-anchor="middle" font-size="13">보안 그룹에서만</text>
+
+  <!-- arrows -->
+  <line x1="150" y1="185" x2="213" y2="185" stroke="#111" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="85" y="140" text-anchor="middle" font-size="12">https://nyannyanpunch.cloud</text>
+  <line x1="355" y1="170" x2="433" y2="185" stroke="#111" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="392" y="165" text-anchor="middle" font-size="12">/</text>
+  <line x1="355" y1="225" x2="433" y2="320" stroke="#111" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="385" y="290" text-anchor="middle" font-size="12">/api</text>
+  <line x1="600" y1="340" x2="638" y2="340" stroke="#111" stroke-width="1.5" marker-end="url(#a)"/>
+  <path d="M600 395 L620 412 L825 412 L825 345 L838 345" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="725" y="406" text-anchor="middle" font-size="12">TLS 접속</text>
+
+  <!-- outside VPC services -->
+  <rect x="200" y="540" width="250" height="60" rx="6" fill="#fff" stroke="#111" stroke-width="1.5"/>
+  <text x="325" y="564" text-anchor="middle" font-weight="bold" font-size="14">Amazon ECR</text>
+  <text x="325" y="584" text-anchor="middle" font-size="13">backend · frontend (3.0, 3.1)</text>
+
+  <rect x="480" y="540" width="290" height="60" rx="6" fill="#fff" stroke="#111" stroke-width="1.5"/>
+  <text x="625" y="564" text-anchor="middle" font-weight="bold" font-size="14">Secrets Manager</text>
+  <text x="625" y="584" text-anchor="middle" font-size="13">backend 비밀번호 · Pod Identity로 읽음</text>
+  <line x1="500" y1="538" x2="500" y2="407" stroke="#111" stroke-width="1.2" stroke-dasharray="5 3" marker-end="url(#a)"/>
+  <line x1="325" y1="538" x2="413" y2="495" stroke="#111" stroke-width="1.2" stroke-dasharray="5 3" marker-end="url(#a)"/>
+</svg>
