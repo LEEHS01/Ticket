@@ -1,0 +1,31 @@
+# EKS + RDS + Secrets Manager + 도메인과 HTTPS. ACM 인증서가 발급된 뒤 적용한다
+#   CERT=$(aws acm list-certificates --query "CertificateSummaryList[?DomainName=='nyannyanpunch.cloud'].CertificateArn" --output text)
+#   kubectl kustomize k8s/overlays/eks-https | sed "s|CERT_ARN|$CERT|; s/ACCOUNT_ID/$ACCOUNT/; s/RDS_ENDPOINT/$RDS/" | kubectl apply -f -
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- ../eks-sm
+
+patches:
+# ALB에 HTTPS(443) 리스너와 인증서를 붙이고, HTTP(80)로 온 요청은 HTTPS로 넘긴다
+- target:
+    kind: Ingress
+    name: ticketing
+  patch: |-
+    - op: add
+      path: /metadata/annotations/alb.ingress.kubernetes.io~1listen-ports
+      value: '[{"HTTP":80},{"HTTPS":443}]'
+    - op: add
+      path: /metadata/annotations/alb.ingress.kubernetes.io~1ssl-redirect
+      value: "443"
+    - op: add
+      path: /metadata/annotations/alb.ingress.kubernetes.io~1certificate-arn
+      value: CERT_ARN
+# HTTPS로 접속하므로 로그인 쿠키에 Secure 속성을 붙인다
+- target:
+    kind: ConfigMap
+    name: ticketing-config
+  patch: |-
+    - op: replace
+      path: /data/SESSION_COOKIE_SECURE
+      value: "true"

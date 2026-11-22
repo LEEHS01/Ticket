@@ -22,10 +22,13 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
-      # MySQL이 접속을 받을 때까지 기다린다
+      # DB가 접속을 받을 때까지 기다린다. 주소는 ConfigMap의 DB_HOST, DB_PORT 를 쓴다
       - name: wait-mysql
         image: busybox:1.37
-        command: ["sh", "-c", "until nc -z -w 2 mysql 3306; do echo waiting for mysql; sleep 3; done"]
+        command: ["sh", "-c", "until nc -z -w 2 \"$DB_HOST\" \"$DB_PORT\"; do echo waiting for $DB_HOST; sleep 3; done"]
+        envFrom:
+        - configMapRef:
+            name: ticketing-config
       containers:
       - name: migrate
         image: harpda/ticketing-backend

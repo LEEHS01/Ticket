@@ -1,0 +1,36 @@
+# EKS + RDS + Secrets Manager. backend의 비밀번호를 Secrets Manager에서 받는다. 먼저 infra/eks/secrets-manager.sh 를 실행한다
+#   kubectl kustomize k8s/overlays/eks-sm | sed "s/ACCOUNT_ID/$ACCOUNT/; s/RDS_ENDPOINT/$RDS/" | kubectl apply -f -
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- ../eks-rds
+- secretproviderclass.yaml
+
+patches:
+# backend가 DB_PASSWORD, REDIS_PASSWORD 를 ticketing-secret 이 아니라 Secrets Manager에서 온 Secret에서 받는다.
+# CSI 볼륨을 Pod에 붙여야 Secrets Manager의 값을 읽어 온다
+- target:
+    kind: Deployment
+    name: backend
+  patch: |-
+    - op: add
+      path: /spec/template/spec/volumes/-
+      value:
+        name: secrets-store
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: backend-secrets
+    - op: add
+      path: /spec/template/spec/containers/0/volumeMounts/-
+      value:
+        name: secrets-store
+        mountPath: /mnt/secrets
+        readOnly: true
+    - op: replace
+      path: /spec/template/spec/containers/0/env/1/valueFrom/secretKeyRef/name
+      value: backend-from-secrets-manager
+    - op: replace
+      path: /spec/template/spec/containers/0/env/2/valueFrom/secretKeyRef/name
+      value: backend-from-secrets-manager
