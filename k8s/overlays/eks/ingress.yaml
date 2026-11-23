@@ -4,7 +4,7 @@ kind: IngressClassParams
 metadata:
   name: alb
 spec:
-  scheme: internet-facing        # 인터넷에서 접속하는 ALB. 공용 서브넷(kubernetes.io/role/elb 태그)에 만들어진다
+  scheme: internet-facing        # 인터넷에서 접속하는 ALB. 퍼블릭 서브넷(kubernetes.io/role/elb 태그)에 만들어진다
 ---
 apiVersion: networking.k8s.io/v1
 kind: IngressClass

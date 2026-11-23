@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Amazon RDS(MySQL) 생성. 저장소 루트에서 실행한다.
-# RDS는 사설 서브넷에 두고, 클러스터 보안 그룹에서 오는 3306만 허용한다. 마스터 비밀번호는 .env.rds 에만 적고 화면에 출력하지 않는다
+# RDS는 프라이빗 서브넷에 두고, 클러스터 보안 그룹에서 오는 3306만 허용한다. 마스터 비밀번호는 .env.rds 에만 적고 화면에 출력하지 않는다
 set -euo pipefail
 CLUSTER=ticketing-eks
 STACK=ticketing-eks-vpc
@@ -10,7 +10,7 @@ VPC=$(aws cloudformation describe-stacks --stack-name $STACK --query "Stacks[0].
 SUBNETS=$(aws ec2 describe-subnets --filters "Name=tag:aws:cloudformation:stack-name,Values=$STACK" "Name=tag:Name,Values=*PrivateSubnet*" --query 'Subnets[].SubnetId' --output text)
 CLUSTER_SG=$(aws eks describe-cluster --name $CLUSTER --query cluster.resourcesVpcConfig.clusterSecurityGroupId --output text)
 
-# 1. DB 서브넷 그룹(사설 서브넷 2개)과 보안 그룹(클러스터 보안 그룹에서 오는 3306)
+# 1. DB 서브넷 그룹(프라이빗 서브넷 2개)과 보안 그룹(클러스터 보안 그룹에서 오는 3306)
 aws rds create-db-subnet-group --db-subnet-group-name $DB --db-subnet-group-description "ticketing private subnets" \
   --subnet-ids $SUBNETS --query DBSubnetGroup.DBSubnetGroupName --output text
 SG=$(aws ec2 create-security-group --group-name $DB-sg --description "ticketing RDS" --vpc-id $VPC --query GroupId --output text)

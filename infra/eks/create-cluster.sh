@@ -31,7 +31,7 @@ if ! aws iam get-role --role-name $NODE_ROLE > /dev/null 2>&1; then
   sleep 10   # 새 역할이 퍼질 때까지 잠시 기다린다
 fi
 
-# 2. 노드를 둘 사설 서브넷 2개
+# 2. 노드를 둘 프라이빗 서브넷 2개
 SUBNETS=$(aws ec2 describe-subnets \
   --filters "Name=tag:aws:cloudformation:stack-name,Values=$STACK" "Name=tag:Name,Values=*PrivateSubnet*" \
   --query 'Subnets[].SubnetId' --output text | tr '\t' ',')
