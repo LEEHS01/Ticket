@@ -106,6 +106,39 @@ class AuthServiceTest {
     }
 
     @Test
+    void 있는_계정의_잠금은_DB_열에_있어_Redis가_비거나_죽어도_풀리지_않는다() {
+        app.auth.signup("me@example.com", "password-123", "나");
+        for (int i = 0; i < 5; i++) {
+            catchApi(() -> app.auth.authenticate("me@example.com", "bad"));
+        }
+        app.attempts.flush();
+        app.attempts.down = true;
+        assertThat(catchApi(() -> app.auth.authenticate("me@example.com", "password-123")).code())
+                .isEqualTo(ErrorCode.ACCOUNT_LOCKED);
+        assertThat(app.users.failures).isNotEmpty(); // users 열(가짜)에 기록됨
+    }
+
+    @Test
+    void Redis가_죽어도_로그인은_되고_없는_이메일은_세지_못할_뿐_같은_401() {
+        long id = app.auth.signup("me@example.com", "password-123", "나").id();
+        app.attempts.down = true;
+        assertThat(app.auth.authenticate("me@example.com", "password-123").id()).isEqualTo(id);
+        for (int i = 0; i < 6; i++) {
+            assertThat(catchApi(() -> app.auth.authenticate("ghost@example.com", "x")).code())
+                    .isEqualTo(ErrorCode.INVALID_CREDENTIALS);
+        }
+    }
+
+    @Test
+    void 성공하면_실패_횟수가_DB에서_초기화된다() {
+        long id = app.auth.signup("me@example.com", "password-123", "나").id();
+        catchApi(() -> app.auth.authenticate("me@example.com", "bad"));
+        assertThat(app.users.failures).containsKey(id);
+        app.auth.authenticate("me@example.com", "password-123");
+        assertThat(app.users.failures).doesNotContainKey(id);
+    }
+
+    @Test
     void 시연_계정은_다시_실행하면_비밀번호가_갱신된다() {
         app.auth.upsertDemoAccount("demo@example.com", "first-pass", "시연");
         app.auth.upsertDemoAccount("demo@example.com", "second-pass", "시연");

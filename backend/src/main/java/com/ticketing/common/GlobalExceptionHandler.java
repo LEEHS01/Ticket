@@ -126,8 +126,18 @@ public class GlobalExceptionHandler {
         return respond(req, ErrorCode.METHOD_NOT_ALLOWED, ErrorCode.METHOD_NOT_ALLOWED.defaultMessage());
     }
 
+    /** Redis가 응답하지 않으면 다시 시도할 수 있는 503으로 답한다(스택·내부 정보는 응답에 없음). */
+    static final long REDIS_RETRY_AFTER_SECONDS = 5;
+
     @ExceptionHandler(Exception.class)
     ResponseEntity<ApiError> handleUnexpected(Exception e, HttpServletRequest req) {
+        if (RedisFailures.isRedisFailure(e)) {
+            log.warn("Redis 응답 없음 → 503: {} {} ({})", req.getMethod(), req.getRequestURI(), e.getClass().getSimpleName());
+            return ResponseEntity.status(ErrorCode.SERVICE_UNAVAILABLE.status())
+                    .header("Retry-After", String.valueOf(REDIS_RETRY_AFTER_SECONDS))
+                    .body(ApiError.of(ErrorCode.SERVICE_UNAVAILABLE, ErrorCode.SERVICE_UNAVAILABLE.defaultMessage(),
+                            RequestIdFilter.currentRequestId(req), null));
+        }
         // 요청 ID는 MDC로 로그에 함께 찍힌다. 응답에는 고정 문구만.
         log.error("처리되지 않은 예외: {} {}", req.getMethod(), req.getRequestURI(), e);
         return respond(req, ErrorCode.INTERNAL_ERROR, ErrorCode.INTERNAL_ERROR.defaultMessage());

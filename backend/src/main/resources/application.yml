@@ -14,6 +14,8 @@ app:
     password: ${REDIS_PASSWORD:}
     ssl: ${REDIS_SSL:false}
     database: ${REDIS_DATABASE:0}
+    # Redis는 잃어도 되는 상태만 담는다. 응답이 없으면 오래 기다리지 않고 바로 실패(예매 진행은 503, 요청 제한은 통과)
+    timeout-ms: ${REDIS_TIMEOUT_MS:500}
   rate-limit:
     general-per-minute: ${RATE_LIMIT_GENERAL_PER_MINUTE:120}
     strict-per-minute: ${RATE_LIMIT_STRICT_PER_MINUTE:30}
@@ -23,6 +25,10 @@ app:
   auth:
     session-idle-minutes: ${SESSION_IDLE_MINUTES:30}
     session-cookie-secure: ${SESSION_COOKIE_SECURE:true}
+    # 세션의 마지막 접근 시각을 DB에 쓰는 최소 간격(초). 그 사이 요청은 세션 테이블에 쓰지 않는다
+    session-touch-seconds: ${SESSION_TOUCH_SECONDS:60}
+    # 만료 세션 정리 주기(초). 돌지 않아도 만료 세션은 읽을 때 걸러지므로 결과가 틀리지 않는다
+    session-cleanup-seconds: ${SESSION_CLEANUP_SECONDS:300}
   queue:
     max-active: ${QUEUE_MAX_ACTIVE:100}
     admit-seconds: ${QUEUE_ADMIT_SECONDS:600}
@@ -57,17 +63,15 @@ spring:
       database: ${app.redis.database}
       ssl:
         enabled: ${app.redis.ssl}
-      timeout: 2s
-      connect-timeout: 2s
+      timeout: ${app.redis.timeout-ms}ms
+      connect-timeout: ${app.redis.timeout-ms}ms
       repositories:
         enabled: false
   session:
-    # v3: 세션은 Redis에(Spring Session). 서버 메모리 세션 없음 → 복제본·재시작과 무관, 스티키 세션 불필요.
-    # default 저장소 = 세션 하나당 Redis HASH 하나 + TTL(유휴 만료). 키스페이스 알림이 필요 없다.
-    redis:
-      namespace: ticketing:session
-      repository-type: default
-      flush-mode: on-save
+    # next: 세션은 MySQL(Spring Session JDBC). 저장소 구성은 auth/SessionConfig.java가 직접 한다
+    # (읽기 1쿼리, 쓰기는 바뀔 때만, 만료 정리는 SKIP LOCKED 배치). 테이블은 Flyway V3가 만든다.
+    jdbc:
+      initialize-schema: never
   flyway:
     # 서버 기동 시에는 마이그레이션하지 않는다. `java -jar app.jar migrate` 에서만 켠다(application-migrate.yml).
     enabled: false

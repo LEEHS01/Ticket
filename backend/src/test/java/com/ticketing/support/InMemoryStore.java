@@ -299,8 +299,32 @@ public final class InMemoryStore {
 
     // ---------- UserRepository / LoginAttemptStore ----------
 
+    /** users 테이블 흉내. 로그인 실패 열(failed_login_count, failed_login_until)도 같은 규칙으로(시각은 테스트 시계). */
     public final class Users implements UserRepository {
         public final Map<Long, UserRow> rows = new LinkedHashMap<>();
+        public final Map<Long, long[]> failures = new HashMap<>(); // id → {count, untilMillis}
+
+        private UserRow withFailures(UserRow u) {
+            long[] f = failures.get(u.id());
+            if (f == null || f[1] <= clock.millis()) {
+                return new UserRow(u.id(), u.email(), u.name(), u.passwordHash(), u.loginEnabled());
+            }
+            return new UserRow(u.id(), u.email(), u.name(), u.passwordHash(), u.loginEnabled(), (int) f[0],
+                    Duration.ofMillis(f[1] - clock.millis()));
+        }
+
+        @Override
+        public synchronized LoginFailures recordLoginFailure(long userId, Duration window) {
+            long[] f = failures.get(userId);
+            long count = f == null || f[1] <= clock.millis() ? 1 : f[0] + 1;
+            failures.put(userId, new long[] {count, clock.millis() + window.toMillis()});
+            return new LoginFailures((int) count, window);
+        }
+
+        @Override
+        public synchronized void resetLoginFailures(long userId) {
+            failures.remove(userId);
+        }
 
         @Override
         public synchronized long insert(String email, String passwordHash, String name) {
@@ -314,12 +338,12 @@ public final class InMemoryStore {
 
         @Override
         public Optional<UserRow> findByEmail(String normalizedEmail) {
-            return rows.values().stream().filter(u -> u.email().equals(normalizedEmail)).findFirst();
+            return rows.values().stream().filter(u -> u.email().equals(normalizedEmail)).findFirst().map(this::withFailures);
         }
 
         @Override
         public Optional<UserRow> findById(long id) {
-            return Optional.ofNullable(rows.get(id));
+            return Optional.ofNullable(rows.get(id)).map(this::withFailures);
         }
 
         @Override
@@ -327,6 +351,7 @@ public final class InMemoryStore {
             Optional<UserRow> existing = findByEmail(email);
             long id = existing.map(UserRow::id).orElseGet(ids::incrementAndGet);
             rows.put(id, new UserRow(id, email, name, passwordHash, true));
+            failures.remove(id);
         }
 
         /** 로그인 불가 계정(시드 계정 흉내). */
@@ -337,8 +362,21 @@ public final class InMemoryStore {
         }
     }
 
+    /** 없는 이메일의 실패 횟수(Redis) 흉내. down = true면 Redis 장애처럼 예외를 던진다. */
     public final class LoginAttempts implements LoginAttemptStore {
         private final Map<String, long[]> state = new HashMap<>(); // key → {count, expiresAtMillis}
+        public boolean down;
+
+        /** Redis를 통째로 비운 것처럼. */
+        public void flush() {
+            state.clear();
+        }
+
+        private void failIfDown() {
+            if (down) {
+                throw new org.springframework.data.redis.RedisConnectionFailureException("Redis 다운(테스트)");
+            }
+        }
 
         private long[] live(String key) {
             long[] v = state.get(key);
@@ -351,12 +389,14 @@ public final class InMemoryStore {
 
         @Override
         public Optional<Duration> lockedFor(String accountKey, int maxFailures) {
+            failIfDown();
             long[] v = live(accountKey);
             return v == null || v[0] < maxFailures ? Optional.empty() : Optional.of(Duration.ofMillis(v[1] - clock.millis()));
         }
 
         @Override
         public Optional<Duration> recordFailure(String accountKey, int maxFailures, Duration lockDuration) {
+            failIfDown();
             long[] v = live(accountKey);
             long count = v == null ? 1 : v[0] + 1;
             state.put(accountKey, new long[] {count, clock.millis() + lockDuration.toMillis()});
@@ -376,6 +416,14 @@ public final class InMemoryStore {
         private final Map<String, String> userToken = new HashMap<>();   // perf:uid → tokenId
         private final Map<Long, LinkedHashMap<String, Long>> waiting = new HashMap<>(); // token → lastSeen
         private final Map<Long, Map<String, Long>> active = new HashMap<>();             // token → until
+
+        /** Redis를 통째로 비운 것처럼(장애 전환·재시작). */
+        public void flush() {
+            tokenOwner.clear();
+            userToken.clear();
+            waiting.clear();
+            active.clear();
+        }
 
         private void advance(long perf, AppProperties.Queue s) {
             long now = clock.millis();
@@ -465,6 +513,13 @@ public final class InMemoryStore {
         public final Map<String, Hold> holds = new HashMap<>();
         public final Map<String, String> seatHolder = new HashMap<>(); // perf:seat → holdId
         private final Map<String, String> tokenHold = new HashMap<>();
+
+        /** Redis를 통째로 비운 것처럼. */
+        public void flush() {
+            holds.clear();
+            seatHolder.clear();
+            tokenHold.clear();
+        }
 
         private boolean alive(Hold h) {
             return h != null && h.expiresAt().isAfter(clock.instant());
@@ -631,10 +686,10 @@ public final class InMemoryStore {
     public static AppProperties props(int maxActive) {
         return new AppProperties(
                 new AppProperties.Db("x", 3306, "x", "x", "x", "PREFERRED", 1),
-                new AppProperties.Redis("x", 6379, null, false, 0),
+                new AppProperties.Redis("x", 6379, null, false, 0, 500),
                 new AppProperties.RateLimit(100, 10, 100),
                 new AppProperties.Cors(List.of()),
                 new AppProperties.Queue(maxActive, 600, 30, 300),
-                new AppProperties.Auth(30, false));
+                new AppProperties.Auth(30, false, 60, 300));
     }
 }

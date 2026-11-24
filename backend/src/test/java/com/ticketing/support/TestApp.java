@@ -6,6 +6,7 @@ import java.time.Instant;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import com.ticketing.auth.AuthService;
+import com.ticketing.common.RedisBackoff;
 import com.ticketing.config.AppProperties;
 import com.ticketing.queue.QueueService;
 import com.ticketing.queue.QueueTokens;
@@ -44,7 +45,7 @@ public final class TestApp {
         attempts = store.new LoginAttempts();
         props = InMemoryStore.props(maxActive);
         QueueTokens tokens = new QueueTokens();
-        auth = new AuthService(users, attempts, new BCryptPasswordEncoder(4));
+        auth = new AuthService(users, attempts, new BCryptPasswordEncoder(4), new RedisBackoff());
         showService = new ShowService(shows, store.clock);
         queue = new QueueService(shows, seats, queueStore, holds, tokens, props, store.clock);
         seatService = new SeatService(shows, seats, holds, queue, props, store.clock);

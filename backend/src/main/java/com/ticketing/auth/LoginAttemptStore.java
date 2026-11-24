@@ -4,7 +4,8 @@ import java.time.Duration;
 import java.util.Optional;
 
 /**
- * 계정별 연속 로그인 실패 횟수(Redis). 키는 이메일 원문이 아니라 SHA-256(정규화 이메일).
+ * 없는 이메일의 연속 로그인 실패 횟수(Redis, 잃어도 되는 상태). 키는 이메일 원문이 아니라 SHA-256(정규화 이메일).
+ * next: 있는 계정의 잠금은 users 열(MySQL)에 있다({@link UserRepository#recordLoginFailure}).
  * 없는 이메일에도 똑같이 적용된다 → 잠금 여부로 가입 여부를 알 수 없다.
  */
 public interface LoginAttemptStore {

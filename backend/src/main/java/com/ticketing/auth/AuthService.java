@@ -7,6 +7,7 @@ import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Service;
 import com.ticketing.common.ApiError;
 import com.ticketing.common.ApiException;
 import com.ticketing.common.ErrorCode;
+import com.ticketing.common.RedisBackoff;
 import com.ticketing.reservation.EmailPrivacy;
 
 /**
@@ -21,6 +23,7 @@ import com.ticketing.reservation.EmailPrivacy;
  * - 비밀번호: BCrypt(cost 12). 원문·해시를 로그와 응답에 남기지 않는다.
  * - 로그인 실패: 이메일 없음/비밀번호 틀림을 구분하지 않고(INVALID_CREDENTIALS), 없는 계정에도 더미 해시를 비교해 응답 시간을 맞춘다.
  * - 계정당 연속 5회 실패 → 15분 잠금(429 ACCOUNT_LOCKED + Retry-After). 성공하면 초기화.
+ *   next: 있는 계정의 잠금은 MySQL(users 열), 없는 이메일의 횟수만 Redis(잃어도 되는 상태).
  */
 @Service
 public class AuthService {
@@ -37,12 +40,15 @@ public class AuthService {
     private final UserRepository users;
     private final LoginAttemptStore attempts;
     private final PasswordEncoder encoder;
+    private final RedisBackoff redisBackoff;
     private volatile String dummyHash;
 
-    public AuthService(UserRepository users, LoginAttemptStore attempts, PasswordEncoder encoder) {
+    public AuthService(UserRepository users, LoginAttemptStore attempts, PasswordEncoder encoder,
+            RedisBackoff redisBackoff) {
         this.users = users;
         this.attempts = attempts;
         this.encoder = encoder;
+        this.redisBackoff = redisBackoff;
     }
 
     /**
@@ -76,30 +82,76 @@ public class AuthService {
 
     public User authenticate(String email, String password) {
         String normalized = EmailPrivacy.normalize(email);
-        String accountKey = EmailPrivacy.hash(normalized);
-        Optional<Duration> locked = attempts.lockedFor(accountKey, MAX_FAILURES);
-        if (locked.isPresent()) {
-            throw lockedError(locked.get());
-        }
         Optional<UserRepository.UserRow> row = users.findByEmail(normalized);
+        if (row.isPresent()) {
+            return authenticateAccount(row.get(), password);
+        }
+        return rejectUnknownAccount(EmailPrivacy.hash(normalized), password);
+    }
+
+    /**
+     * 있는 계정: 잠금 상태는 users의 열(MySQL)에 있다 → Redis가 비거나 장애 전환돼도 잠금이 풀리지 않는다.
+     * 잠금 판단(남은 시간)은 findByEmail이 DB 시계로 계산해 온다.
+     */
+    private User authenticateAccount(UserRepository.UserRow u, String password) {
+        if (u.failedLogins() >= MAX_FAILURES && u.failureWindow().isPositive()) {
+            throw lockedError(u.failureWindow());
+        }
         boolean ok;
-        if (row.isPresent() && row.get().loginEnabled() && looksLikeBcrypt(row.get().passwordHash())) {
-            ok = encoder.matches(password, row.get().passwordHash());
+        if (u.loginEnabled() && looksLikeBcrypt(u.passwordHash())) {
+            ok = encoder.matches(password, u.passwordHash());
         } else {
-            encoder.matches(password, dummyHash()); // 없는 계정·로그인 불가 계정도 같은 시간이 걸리게
+            encoder.matches(password, dummyHash()); // 로그인 불가 계정도 같은 시간이 걸리게
             ok = false;
         }
         if (!ok) {
-            Optional<Duration> nowLocked = attempts.recordFailure(accountKey, MAX_FAILURES, LOCK_DURATION);
-            if (nowLocked.isPresent()) {
+            UserRepository.LoginFailures f = users.recordLoginFailure(u.id(), LOCK_DURATION);
+            if (f.count() >= MAX_FAILURES) {
                 log.warn("로그인 연속 실패로 계정 잠금(15분)");
-                throw lockedError(nowLocked.get());
+                throw lockedError(atLeastOneSecond(f.remaining()));
             }
             throw new ApiException(ErrorCode.INVALID_CREDENTIALS);
         }
-        attempts.reset(accountKey);
-        UserRepository.UserRow u = row.get();
+        if (u.failedLogins() > 0) {
+            users.resetLoginFailures(u.id());
+        }
         return new User(u.id(), u.email(), u.name());
+    }
+
+    /**
+     * 없는 이메일: 지킬 계정이 없으므로 "잃어도 되는 상태"로 Redis에 센다(키 = SHA-256(이메일)).
+     * 있는 계정과 똑같이 5회 → 429가 나와야 잠금 여부로 가입 여부를 알아낼 수 없다.
+     * Redis가 죽어 있으면 세지 않고 401만 준다(로그인 기능 자체는 Redis 없이 동작해야 하므로).
+     */
+    private User rejectUnknownAccount(String accountKey, String password) {
+        Optional<Duration> locked = bestEffort(() -> attempts.lockedFor(accountKey, MAX_FAILURES));
+        if (locked.isPresent()) {
+            throw lockedError(locked.get());
+        }
+        encoder.matches(password, dummyHash()); // 없는 계정도 같은 시간이 걸리게
+        Optional<Duration> nowLocked = bestEffort(() -> attempts.recordFailure(accountKey, MAX_FAILURES, LOCK_DURATION));
+        if (nowLocked.isPresent()) {
+            throw lockedError(nowLocked.get());
+        }
+        throw new ApiException(ErrorCode.INVALID_CREDENTIALS);
+    }
+
+    private Optional<Duration> bestEffort(java.util.function.Supplier<Optional<Duration>> call) {
+        if (!redisBackoff.tryNow()) {
+            return Optional.empty();
+        }
+        try {
+            Optional<Duration> r = call.get();
+            redisBackoff.succeeded();
+            return r;
+        } catch (DataAccessException e) {
+            redisBackoff.failed(e);
+            return Optional.empty();
+        }
+    }
+
+    private static Duration atLeastOneSecond(Duration d) {
+        return d.compareTo(Duration.ofSeconds(1)) < 0 ? Duration.ofSeconds(1) : d;
     }
 
     public Optional<User> findUser(long id) {

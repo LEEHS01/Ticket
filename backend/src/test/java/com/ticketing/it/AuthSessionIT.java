@@ -32,9 +32,9 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import com.ticketing.TicketingApplication;
 
 /**
- * v3 로그인·세션 통합 테스트(실제 MySQL·Redis, 실제 HTTP).
- * 핵심: 애플리케이션 인스턴스를 **두 개** 띄우고(같은 Redis), 한쪽에서 받은 세션 쿠키를 다른 쪽에 보내도 로그인이 유지된다
- * = 세션이 서버 메모리가 아니라 Redis에 있다는 증거. 쿠키는 브라우저처럼 직접 들고 다닌다(Browser).
+ * 로그인·세션 통합 테스트(실제 MySQL·Redis, 실제 HTTP).
+ * 핵심: 애플리케이션 인스턴스를 **두 개** 띄우고(같은 DB), 한쪽에서 받은 세션 쿠키를 다른 쪽에 보내도 로그인이 유지된다
+ * = 세션이 서버 메모리가 아니라 MySQL(SPRING_SESSION)에 있다는 증거. next: 세션은 Redis에 없다(Redis를 비워도 유지 → RedisLossIT). 쿠키는 브라우저처럼 직접 들고 다닌다(Browser).
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "spring.flyway.enabled=true", "app.queue.max-active=1", "app.auth.session-cookie-secure=false",
@@ -79,6 +79,17 @@ class AuthSessionIT {
         if (second != null) {
             second.close();
         }
+    }
+
+    int sessionRows(String sessionId) {
+        return jdbc.sql("SELECT COUNT(*) FROM SPRING_SESSION WHERE SESSION_ID = :s").param("s", sessionId)
+                .query(Integer.class).single();
+    }
+
+    int attributeRows(String sessionId) {
+        return jdbc.sql("""
+                        SELECT COUNT(*) FROM SPRING_SESSION_ATTRIBUTES a JOIN SPRING_SESSION s ON s.PRIMARY_ID = a.SESSION_PRIMARY_ID
+                         WHERE s.SESSION_ID = :s""").param("s", sessionId).query(Integer.class).single();
     }
 
     // ------------------------------------------------------------------ 브라우저 흉내
@@ -174,14 +185,20 @@ class AuthSessionIT {
     // ------------------------------------------------------------------ 테스트
 
     @Test
-    void 로그인한_세션_쿠키를_다른_인스턴스에_보내도_인증이_유지되고_로그아웃은_Redis에서_세션을_지운다() throws Exception {
+    void 로그인한_세션_쿠키를_다른_인스턴스에_보내도_인증이_유지되고_로그아웃은_DB에서_세션을_지운다() throws Exception {
         Browser br = new Browser();
         String email = email();
         long id = br.signup(a, email);
-        String sessionKey = "ticketing:session:sessions:" + br.sessionId();
-        assertThat(redis.hasKey(sessionKey)).isTrue();             // 세션은 Redis에 있다
-        Long ttl = redis.getExpire(sessionKey, java.util.concurrent.TimeUnit.SECONDS);
-        assertThat(ttl).isBetween(1700L, 1800L);                   // 유휴 만료 30분
+        String sid = br.sessionId();
+        assertThat(sessionRows(sid)).isEqualTo(1);                  // 세션은 MySQL에 있다
+        assertThat(attributeRows(sid)).isEqualTo(2);                // uid, csrf
+        String pk = jdbc.sql("SELECT PRIMARY_ID FROM SPRING_SESSION WHERE SESSION_ID = :s").param("s", sid)
+                .query(String.class).single();
+        assertThat(redis.keys("*session*")).isEmpty();              // Redis에는 없다
+        Map<String, Object> row = jdbc.sql("SELECT MAX_INACTIVE_INTERVAL AS m, EXPIRY_TIME - LAST_ACCESS_TIME AS d "
+                + "FROM SPRING_SESSION WHERE SESSION_ID = :s").param("s", sid).query().singleRow();
+        assertThat(((Number) row.get("m")).intValue()).isEqualTo(1800);   // 유휴 만료 30분
+        assertThat(((Number) row.get("d")).longValue()).isEqualTo(1_800_000L);
 
         Resp onB = br.get(b, "/api/auth/me", Map.of());            // 다른 인스턴스
         assertThat(((Map<?, ?>) onB.body().get("user")).get("id")).isEqualTo((int) id);
@@ -192,8 +209,55 @@ class AuthSessionIT {
         assertThat(setCookie).isEmpty(); // 이미 세션이 있으면 다시 내려주지 않는다
 
         assertThat(br.post(b, "/api/auth/logout", null, Map.of()).status()).isEqualTo(204);
-        assertThat(redis.hasKey(sessionKey)).isFalse();
+        assertThat(sessionRows(sid)).isZero();                       // 다른 인스턴스에서 로그아웃해도 DB에서 지워진다
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM SPRING_SESSION_ATTRIBUTES WHERE SESSION_PRIMARY_ID = :p")
+                .param("p", pk).query(Integer.class).single()).isZero(); // 속성도 함께(ON DELETE CASCADE)
         assertThat(br.cookie).isNull();
+    }
+
+    @Test
+    void 세션_테이블은_1분_안의_연속_요청에는_쓰지_않고_그보다_오래되면_마지막_접근_시각만_갱신한다() throws Exception {
+        Browser br = new Browser();
+        br.signup(a, email());
+        String sid = br.sessionId();
+        long first = lastAccess(sid);
+        Thread.sleep(30);
+        br.get(b, "/api/auth/me", Map.of());
+        br.get(a, "/api/me/reservations", Map.of());
+        assertThat(lastAccess(sid)).isEqualTo(first);                // 60초 안 → UPDATE 없음
+
+        // 2분 전에 마지막으로 접근한 것처럼 되돌리면 다음 요청이 갱신한다
+        jdbc.sql("UPDATE SPRING_SESSION SET LAST_ACCESS_TIME = LAST_ACCESS_TIME - 120000, EXPIRY_TIME = EXPIRY_TIME - 120000 "
+                + "WHERE SESSION_ID = :s").param("s", sid).update();
+        br.get(b, "/api/auth/me", Map.of());
+        assertThat(lastAccess(sid)).isGreaterThanOrEqualTo(first);   // 지금 시각으로 다시 써짐
+        assertThat(jdbc.sql("SELECT EXPIRY_TIME - LAST_ACCESS_TIME FROM SPRING_SESSION WHERE SESSION_ID = :s")
+                .param("s", sid).query(Long.class).single()).isEqualTo(1_800_000L);
+    }
+
+    @Test
+    void 로그인한_요청의_세션_확인은_DB_왕복_1번이다() throws Exception {
+        Browser br = new Browser();
+        br.signup(a, email());
+        String[] th = enterAndHold(br, a, List.of(seatIds.get(0)));
+        br.get(a, "/api/queue/status", token(th[0]));                 // 커넥션 데우기
+        // 대기 상태 조회는 대기열이 Redis라 DB는 세션 조회만 쓴다 → 서버가 받은 문장 수 = 1
+        long before = questions();
+        Resp r = br.get(a, "/api/queue/status", token(th[0]));
+        long after = questions();
+        assertThat(r.status()).isEqualTo(200);
+        long statements = after - before - 1; // SHOW STATUS 자신 1번 제외
+        System.out.println("[측정] GET /api/queue/status 한 번의 DB 문장 수 = " + statements);
+        assertThat(statements).isEqualTo(1);
+    }
+
+    long lastAccess(String sid) {
+        return jdbc.sql("SELECT LAST_ACCESS_TIME FROM SPRING_SESSION WHERE SESSION_ID = :s").param("s", sid)
+                .query(Long.class).single();
+    }
+
+    long questions() {
+        return jdbc.sql("SHOW GLOBAL STATUS LIKE 'Questions'").query((rs, n) -> rs.getLong(2)).single();
     }
 
     @Test
@@ -211,7 +275,8 @@ class AuthSessionIT {
         String afterSignup = br.sessionId();
         assertThat(afterSignup).isNotEqualTo(anonymousId);
         assertThat(br.csrf).isNotEqualTo(anonymousCsrf);
-        assertThat(redis.hasKey("ticketing:session:sessions:" + anonymousId)).isFalse(); // 옛 ID는 사라짐
+        assertThat(sessionRows(anonymousId)).isZero();               // 옛 ID로는 더 찾을 수 없다
+        assertThat(sessionRows(afterSignup)).isEqualTo(1);
 
         // 로그아웃 → 로그인 때도 다시 바뀐다
         String email = email();
@@ -253,7 +318,7 @@ class AuthSessionIT {
         br.signup(a, email());
         String[] th = enterAndHold(br, a, List.of(seatIds.get(0), seatIds.get(4)));
 
-        // 확정은 인스턴스 2에서(세션·대기열 토큰·선점이 모두 Redis에 있으므로 어느 인스턴스든 같다)
+        // 확정은 인스턴스 2에서(세션은 MySQL, 대기열 토큰·선점은 Redis → 어느 인스턴스든 같다)
         String key = UUID.randomUUID().toString();
         Map<String, String> h = Map.of("X-Queue-Token", th[0], "Idempotency-Key", key);
         Resp created = br.post(b, "/api/reservations", "{\"holdId\":\"" + th[1] + "\"}", h);
@@ -370,7 +435,7 @@ class AuthSessionIT {
         for (int i = 0; i < 4; i++) {
             last = attacker.post(b, "/api/auth/login", "{\"email\":\"" + email + "\",\"password\":\"bad\"}", Map.of());
         }
-        assertThat(last.status()).isEqualTo(429); // 5번째 실패에서 잠김(인스턴스가 달라도 Redis에서 센다)
+        assertThat(last.status()).isEqualTo(429); // 5번째 실패에서 잠김(인스턴스가 달라도 users 열에서 센다)
         assertThat(last.error().get("code")).isEqualTo("ACCOUNT_LOCKED");
         assertThat(last.raw().headers().firstValue("Retry-After")).hasValueSatisfying(v ->
                 assertThat(Long.parseLong(v)).isBetween(890L, 900L));

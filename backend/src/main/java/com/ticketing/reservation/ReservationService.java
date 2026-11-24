@@ -117,13 +117,18 @@ public class ReservationService {
     }
 
     private ReservationView createReservation(long userId, String token, String holdId) {
+        // 선점부터 본다(next): Redis가 비었거나(장애 전환·재시작) 선점이 만료됐으면 대기열 토큰도 함께 사라지는데,
+        // 이때 사용자에게는 "좌석을 다시 고르라"(409 HOLD_EXPIRED)가 맞다. 화면은 좌석 화면으로 돌아가고,
+        // 좌석 조회가 401 QUEUE_TOKEN_INVALID를 받으면 그때 다시 줄을 선다.
+        // 선점이 있으면 지금까지처럼 토큰(401/403)을 확인한 뒤, 내 토큰·내 계정·같은 회차가 아니면 409.
+        HoldStore.Hold hold = holds.find(holdId)
+                .orElseThrow(() -> new ApiException(ErrorCode.HOLD_EXPIRED));
         QueueStore.TokenState admitted = queue.requireAdmitted(userId, token, null);
         String tokenId = QueueService.tokenIdOrThrow(token);
-
-        HoldStore.Hold hold = holds.find(holdId)
-                .filter(h -> h.tokenId().equals(tokenId) && h.userId() == userId
-                        && h.performanceId() == admitted.performanceId())
-                .orElseThrow(() -> new ApiException(ErrorCode.HOLD_EXPIRED));
+        if (!hold.tokenId().equals(tokenId) || hold.userId() != userId
+                || hold.performanceId() != admitted.performanceId()) {
+            throw new ApiException(ErrorCode.HOLD_EXPIRED);
+        }
         PerformanceInfo perf = shows.findPerformance(hold.performanceId())
                 .orElseThrow(() -> new ApiException(ErrorCode.HOLD_EXPIRED));
         Instant now = now();

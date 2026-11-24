@@ -31,11 +31,25 @@ public record AppProperties(
     /**
      * 세션(v3). sessionIdleMinutes: 요청이 없으면 이 시간 뒤 세션 만료.
      * sessionCookieSecure: 운영(https)은 true, 로컬 http는 false로 지정해야 브라우저가 쿠키를 보낸다.
+     * next: 세션은 MySQL에 있다. sessionTouchSeconds: 마지막 접근 시각을 DB에 쓰는 최소 간격(그 사이 요청은 세션 테이블에 쓰지 않음).
+     * sessionCleanupSeconds: 만료 세션 정리 주기(정리가 돌지 않아도 만료 세션은 읽을 때 걸러진다).
      */
     public record Auth(
             @Min(value = 1, message = "SESSION_IDLE_MINUTES는 1 이상이어야 합니다.")
             @Max(value = 1440, message = "SESSION_IDLE_MINUTES는 1440 이하여야 합니다.") int sessionIdleMinutes,
-            boolean sessionCookieSecure) {
+            boolean sessionCookieSecure,
+            @Min(value = 0, message = "SESSION_TOUCH_SECONDS는 0 이상이어야 합니다.")
+            @Max(value = 600, message = "SESSION_TOUCH_SECONDS는 600 이하여야 합니다.") int sessionTouchSeconds,
+            @Min(value = 10, message = "SESSION_CLEANUP_SECONDS는 10 이상이어야 합니다.")
+            @Max(value = 86400, message = "SESSION_CLEANUP_SECONDS는 86400 이하여야 합니다.") int sessionCleanupSeconds) {
+
+        public Duration idle() {
+            return Duration.ofMinutes(sessionIdleMinutes);
+        }
+
+        public Duration touch() {
+            return Duration.ofSeconds(sessionTouchSeconds);
+        }
     }
 
     public record Db(
@@ -56,17 +70,20 @@ public record AppProperties(
         }
     }
 
+    /** next: 잃어도 되는 상태(대기열·선점·멱등키·요청 제한)만 담는다. timeoutMs: 명령·연결 시간 초과(짧게, 예매 진행만 503). */
     public record Redis(
             @NotBlank(message = "REDIS_HOST 환경변수가 필요합니다.") String host,
             @Min(1) @Max(65535) int port,
             String password,
             boolean ssl,
-            @Min(0) @Max(15) int database) {
+            @Min(0) @Max(15) int database,
+            @Min(value = 50, message = "REDIS_TIMEOUT_MS는 50 이상이어야 합니다.")
+            @Max(value = 10000, message = "REDIS_TIMEOUT_MS는 10000 이하여야 합니다.") int timeoutMs) {
 
         @Override
         public String toString() {
             return "Redis[host=" + host + ", port=" + port + ", password=****, ssl=" + ssl
-                    + ", database=" + database + "]";
+                    + ", database=" + database + ", timeoutMs=" + timeoutMs + "]";
         }
     }
 

@@ -42,6 +42,7 @@ import com.ticketing.auth.SessionAuth;
 import com.ticketing.common.ApiErrorWriter;
 import com.ticketing.common.ApiException;
 import com.ticketing.common.ErrorCode;
+import com.ticketing.common.RedisBackoff;
 import com.ticketing.config.AppProperties;
 import com.ticketing.config.JacksonConfig;
 import com.ticketing.queue.QueueController;
@@ -63,21 +64,22 @@ import com.ticketing.show.ShowViews;
 
 /**
  * HTTP 계층: 계약의 응답 형태, 입력 검증, 오류 형태(details 포함), 보안 헤더, 요청 제한 버킷,
- * v3 인증(세션의 uid)과 CSRF 필터. 서비스는 목. 세션은 MockHttpSession(실제 Redis 세션은 통합 테스트).
+ * v3 인증(세션의 uid)과 CSRF 필터. 서비스는 목. 세션은 MockHttpSession(실제 MySQL 세션은 통합 테스트).
  */
 @WebMvcTest(controllers = {ShowController.class, QueueController.class, SeatController.class,
         ReservationController.class, AuthController.class},
         properties = {
                 "app.db.host=x", "app.db.port=3306", "app.db.name=x", "app.db.user=x", "app.db.password=x",
                 "app.db.ssl-mode=PREFERRED", "app.db.pool-size=1",
-                "app.redis.host=x", "app.redis.port=6379", "app.redis.database=0",
+                "app.redis.host=x", "app.redis.port=6379", "app.redis.database=0", "app.redis.timeout-ms=500",
                 "app.rate-limit.general-per-minute=100", "app.rate-limit.strict-per-minute=10",
                 "app.rate-limit.poll-per-minute=200",
                 "app.queue.max-active=100", "app.queue.admit-seconds=600", "app.queue.wait-ttl-seconds=30",
                 "app.queue.hold-seconds=300", "app.auth.session-idle-minutes=30", "app.auth.session-cookie-secure=false",
+                "app.auth.session-touch-seconds=60", "app.auth.session-cleanup-seconds=300",
                 "spring.web.resources.add-mappings=false"
         })
-@Import({JacksonConfig.class, ApiErrorWriter.class, SessionAuth.class, ApiWebTest.PropsConfig.class})
+@Import({JacksonConfig.class, ApiErrorWriter.class, SessionAuth.class, RedisBackoff.class, ApiWebTest.PropsConfig.class})
 class ApiWebTest {
 
     @EnableConfigurationProperties(AppProperties.class)
@@ -105,8 +107,12 @@ class ApiWebTest {
     @MockitoBean
     RateLimiter rateLimiter;
 
+    @Autowired
+    RedisBackoff redisBackoff;
+
     @BeforeEach
     void allowAll() {
+        redisBackoff.succeeded(); // 다른 테스트가 남긴 "Redis 잠시 건너뜀" 상태를 지운다
         when(rateLimiter.hit(anyString(), anyString(), anyInt(), any(Duration.class)))
                 .thenReturn(new RateLimiter.Decision(true, 9, 60));
     }
@@ -382,5 +388,24 @@ class ApiWebTest {
         mvc.perform(get("/api/queue/status").session(loggedIn()).header("X-Queue-Token", TOKEN))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(header().string("Retry-After", "42"));
+    }
+
+    @Test
+    void Redis가_응답하지_않으면_예매_진행은_503_SERVICE_UNAVAILABLE_요청_제한은_통과시킨다() throws Exception {
+        // 요청 제한(Redis)이 죽어도 요청은 통과(fail-open)
+        when(rateLimiter.hit(anyString(), anyString(), anyInt(), any(Duration.class)))
+                .thenThrow(new org.springframework.data.redis.RedisConnectionFailureException("down"));
+        when(queueService.enter(USER, 5L)).thenThrow(new org.springframework.data.redis.RedisConnectionFailureException(
+                "Unable to connect to 10.0.0.1:6379"));
+        mvc.perform(authed(post("/api/queue/enter")).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"performanceId\":5}"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(header().string("Retry-After", "5"))
+                .andExpect(jsonPath("$.error.code").value("SERVICE_UNAVAILABLE"))
+                .andExpect(jsonPath("$.error.message").value(ErrorCode.SERVICE_UNAVAILABLE.defaultMessage()))
+                .andExpect(jsonPath("$.error.requestId").isString());
+        // 내 예매(MySQL만)는 그대로 200
+        when(reservationService.myReservations(USER)).thenReturn(List.of());
+        mvc.perform(get("/api/me/reservations").session(loggedIn())).andExpect(status().isOk());
     }
 }

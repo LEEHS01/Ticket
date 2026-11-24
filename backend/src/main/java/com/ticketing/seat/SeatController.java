@@ -18,9 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
-import jakarta.servlet.http.HttpServletRequest;
-
-import com.ticketing.auth.SessionAuth;
+import com.ticketing.auth.CurrentUser;
 import com.ticketing.common.ApiException;
 import com.ticketing.common.ErrorCode;
 import com.ticketing.queue.QueueController;
@@ -35,30 +33,30 @@ public class SeatController {
     }
 
     private final SeatService service;
-    private final SessionAuth sessions;
 
-    public SeatController(SeatService service, SessionAuth sessions) {
+    public SeatController(SeatService service) {
         this.service = service;
-        this.sessions = sessions;
     }
 
     @GetMapping("/api/performances/{id}/seats")
-    public SeatViews.SeatMap seats(HttpServletRequest request, @PathVariable long id,
-            @RequestHeader(value = QueueController.TOKEN_HEADER, required = false) String token) {
-        return service.seatMap(sessions.requireUserId(request), token, positive(id));
+    public SeatViews.SeatMap seats(@PathVariable long id,
+            @RequestHeader(value = QueueController.TOKEN_HEADER, required = false) String token,
+            @CurrentUser long userId) {
+        return service.seatMap(userId, token, positive(id));
     }
 
     @PostMapping(path = "/api/performances/{id}/holds", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<SeatViews.HoldView> hold(HttpServletRequest request, @PathVariable long id,
+    public ResponseEntity<SeatViews.HoldView> hold(@PathVariable long id,
             @RequestHeader(value = QueueController.TOKEN_HEADER, required = false) String token,
-            @Valid @RequestBody HoldRequest body) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(service.hold(sessions.requireUserId(request), token, positive(id), body.seatIds()));
+            @Valid @RequestBody HoldRequest body, @CurrentUser long userId) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.hold(userId, token, positive(id), body.seatIds()));
     }
 
     @DeleteMapping("/api/holds/{holdId}")
-    public ResponseEntity<Void> release(HttpServletRequest request, @PathVariable String holdId,
-            @RequestHeader(value = QueueController.TOKEN_HEADER, required = false) String token) {
-        service.release(sessions.requireUserId(request), token, holdId);
+    public ResponseEntity<Void> release(@PathVariable String holdId,
+            @RequestHeader(value = QueueController.TOKEN_HEADER, required = false) String token,
+            @CurrentUser long userId) {
+        service.release(userId, token, holdId);
         return ResponseEntity.noContent().build();
     }
 

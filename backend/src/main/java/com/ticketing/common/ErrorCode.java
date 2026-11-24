@@ -31,7 +31,9 @@ public enum ErrorCode {
     REQUEST_IN_PROGRESS(HttpStatus.CONFLICT, "같은 예매 요청을 처리하고 있습니다. 잠시 후 다시 시도해 주세요."),
     PAYLOAD_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "요청 본문이 너무 큽니다."),
     NOT_FOUND(HttpStatus.NOT_FOUND, "요청한 경로를 찾을 수 없습니다."),
-    METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "허용되지 않은 요청 방식입니다.");
+    METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "허용되지 않은 요청 방식입니다."),
+    /** next: 예매 진행(대기열·좌석·선점·확정)에 쓰는 Redis가 응답하지 않을 때. 둘러보기·로그인·내 예매는 영향 없음. Retry-After 포함. */
+    SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "예매 진행이 잠시 원활하지 않습니다. 잠시 후 다시 시도해 주세요.");
 
     private final HttpStatus status;
     private final String defaultMessage;

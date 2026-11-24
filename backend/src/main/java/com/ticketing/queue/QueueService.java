@@ -14,7 +14,8 @@ import com.ticketing.show.SaleStatus;
 import com.ticketing.show.ShowRepository;
 
 /**
- * 접속 대기열(ARCHITECTURE.md 3.2.1). 서버는 상태를 갖지 않고, 모든 상태는 Redis에 있다.
+ * 접속 대기열(ARCHITECTURE.md 3.2.1). 서버는 상태를 갖지 않고, 대기열 상태는 Redis에 있다(잃어도 되는 상태:
+ * Redis가 비면 토큰이 무효가 되어 401 QUEUE_TOKEN_INVALID → 사용자는 다시 줄을 선다).
  * 토큰은 헤더(X-Queue-Token)로만 받고 로그에 남기지 않는다.
  * v3: 로그인한 사용자만 진입할 수 있고, 토큰은 그 사용자에게 묶인다. 다른 계정이 쓰면 401.
  * 한 사용자는 회차당 토큰 1개만 가진다(다시 진입하면 이전 토큰·선점은 반납) → 한 사람이 입장 자리를 여러 개 차지하지 못한다.

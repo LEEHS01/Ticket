@@ -39,15 +39,15 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-jdbc</artifactId>
         </dependency>
-        <!-- Spring Data Redis (Lettuce) -->
+        <!-- Spring Data Redis (Lettuce): 대기열·좌석 선점·멱등키·요청 제한 = 잃어도 되는 상태만 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
-        <!-- v3: 세션 저장소를 Redis로(서버 메모리 세션 없음). 기존 Spring Data Redis(Lettuce) 연결을 그대로 쓴다. -->
+        <!-- next: 로그인 세션은 MySQL(Spring Session JDBC). Redis가 비거나 장애 전환돼도 로그인이 유지된다. -->
         <dependency>
             <groupId>org.springframework.session</groupId>
-            <artifactId>spring-session-data-redis</artifactId>
+            <artifactId>spring-session-jdbc</artifactId>
         </dependency>
         <!-- v3: BCrypt만 필요하므로 Spring Security 전체가 아니라 crypto 모듈 하나만 -->
         <dependency>

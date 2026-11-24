@@ -96,8 +96,9 @@ class ReservationServiceTest {
         app.reservationService.confirm(alice, aliceToken, k, h.holdId());
 
         long mallory = app.user("mallory@x.com");
+        // 앨리스의 응답을 돌려주지 않는다. 선점은 확정 때 이미 쓰였으므로(next: 선점을 먼저 확인) HOLD_EXPIRED.
         assertThatThrownBy(() -> app.reservationService.confirm(mallory, aliceToken, k, h.holdId()))
-                .extracting("code").isEqualTo(ErrorCode.QUEUE_TOKEN_INVALID);
+                .extracting("code").isEqualTo(ErrorCode.HOLD_EXPIRED);
     }
 
     @Test
@@ -230,6 +231,21 @@ class ReservationServiceTest {
         app.store.clock.advance(Duration.ofDays(4));
         assertThatThrownBy(() -> app.reservationService.cancel(alice, later.code()))
                 .extracting("code").isEqualTo(ErrorCode.PERFORMANCE_CLOSED);
+    }
+
+    @Test
+    void Redis가_비면_선점으로_확정할_때_HOLD_EXPIRED이고_다른_사람이_같은_좌석을_살_수_있다() {
+        SeatViews.HoldView h = hold(alice, aliceToken, seats.get(0));
+        app.holds.flush();
+        app.queueStore.flush();
+        app.idempotency.state.clear();
+
+        assertThatThrownBy(() -> app.reservationService.confirm(alice, aliceToken, key(), h.holdId()))
+                .extracting("code").isEqualTo(ErrorCode.HOLD_EXPIRED);
+        long bob = app.user("bob@x.com");
+        ReservationView bobs = book(bob, seats.get(0));
+        assertThat(bobs.seats()).hasSize(1);
+        assertThat(app.store.reservations).hasSize(1);
     }
 
     @Test

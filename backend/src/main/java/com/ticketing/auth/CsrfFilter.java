@@ -23,7 +23,7 @@ import com.ticketing.common.ErrorCode;
  * GET·HEAD(·CORS 사전요청 OPTIONS) 외 모든 /api 요청은 헤더 X-CSRF-Token이 세션에 저장된 값과 같아야 한다.
  * 다른 출처의 페이지는 이 값을 읽을 수 없다(응답 body로만 주고, 쿠키로 주지 않음).
  * 비교는 상수 시간. 실패하면 403 CSRF_INVALID. 세션이 없으면(만료 포함) 역시 403.
- * Spring Session 필터(세션 → Redis) 뒤에서 실행되어야 하므로 순서를 그 뒤로 둔다.
+ * Spring Session 필터(세션 → MySQL) 뒤에서 실행되어야 하므로 순서를 그 뒤로 둔다.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 60)

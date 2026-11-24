@@ -1,6 +1,5 @@
 package com.ticketing.queue;
 
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -15,7 +14,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.ticketing.auth.SessionAuth;
+import com.ticketing.auth.CurrentUser;
 
 /** 대기열. v3부터 로그인 필요(401 UNAUTHENTICATED). */
 @RestController
@@ -29,28 +28,26 @@ public class QueueController {
     }
 
     private final QueueService service;
-    private final SessionAuth sessions;
 
-    public QueueController(QueueService service, SessionAuth sessions) {
+    public QueueController(QueueService service) {
         this.service = service;
-        this.sessions = sessions;
     }
 
     @PostMapping(path = "/enter", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public QueueState enter(HttpServletRequest request, @Valid @RequestBody EnterRequest body) {
-        return service.enter(sessions.requireUserId(request), body.performanceId());
+    public QueueState enter(@Valid @RequestBody EnterRequest body, @CurrentUser long userId) {
+        return service.enter(userId, body.performanceId());
     }
 
     @GetMapping("/status")
-    public QueueState status(HttpServletRequest request,
-            @RequestHeader(value = TOKEN_HEADER, required = false) String token) {
-        return service.status(sessions.requireUserId(request), token);
+    public QueueState status(@RequestHeader(value = TOKEN_HEADER, required = false) String token,
+            @CurrentUser long userId) {
+        return service.status(userId, token);
     }
 
     @DeleteMapping
-    public ResponseEntity<Void> leave(HttpServletRequest request,
-            @RequestHeader(value = TOKEN_HEADER, required = false) String token) {
-        service.leave(sessions.requireUserId(request), token);
+    public ResponseEntity<Void> leave(@RequestHeader(value = TOKEN_HEADER, required = false) String token,
+            @CurrentUser long userId) {
+        service.leave(userId, token);
         return ResponseEntity.noContent().build();
     }
 }

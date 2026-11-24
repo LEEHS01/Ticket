@@ -4,7 +4,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 
 import org.springframework.http.HttpStatus;
@@ -17,7 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.ticketing.auth.SessionAuth;
+import com.ticketing.auth.CurrentUser;
 import com.ticketing.common.ApiException;
 import com.ticketing.common.ErrorCode;
 import com.ticketing.queue.QueueController;
@@ -34,19 +33,16 @@ public class ReservationController {
     }
 
     private final ReservationService service;
-    private final SessionAuth sessions;
 
-    public ReservationController(ReservationService service, SessionAuth sessions) {
+    public ReservationController(ReservationService service) {
         this.service = service;
-        this.sessions = sessions;
     }
 
     @PostMapping(path = "/api/reservations", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<ReservationView> create(HttpServletRequest request,
+    public ResponseEntity<ReservationView> create(
             @RequestHeader(value = QueueController.TOKEN_HEADER, required = false) String token,
             @RequestHeader(value = IDEMPOTENCY_HEADER, required = false) String idempotencyKey,
-            @Valid @RequestBody CreateReservationRequest body) {
-        long userId = sessions.requireUserId(request);
+            @Valid @RequestBody CreateReservationRequest body, @CurrentUser long userId) {
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             throw new ApiException(ErrorCode.VALIDATION_ERROR, "Idempotency-Key 헤더가 필요합니다.");
         }
@@ -58,12 +54,12 @@ public class ReservationController {
     }
 
     @GetMapping("/api/me/reservations")
-    public MyReservations mine(HttpServletRequest request) {
-        return new MyReservations(service.myReservations(sessions.requireUserId(request)));
+    public MyReservations mine(@CurrentUser long userId) {
+        return new MyReservations(service.myReservations(userId));
     }
 
     @PostMapping("/api/me/reservations/{code}/cancel")
-    public ReservationView cancel(HttpServletRequest request, @PathVariable String code) {
-        return service.cancel(sessions.requireUserId(request), code);
+    public ReservationView cancel(@PathVariable String code, @CurrentUser long userId) {
+        return service.cancel(userId, code);
     }
 }

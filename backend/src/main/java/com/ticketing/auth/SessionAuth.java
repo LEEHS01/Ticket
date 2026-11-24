@@ -13,7 +13,8 @@ import com.ticketing.common.ApiException;
 import com.ticketing.common.ErrorCode;
 
 /**
- * 세션(Spring Session → Redis)에 무엇을 넣고 꺼내는지 한곳에 모았다. 세션에는 두 값만 둔다:
+ * 세션(Spring Session → MySQL)에 무엇을 넣고 꺼내는지 한곳에 모았다. 인증 확인은 여기 한 곳뿐이다
+ * (컨트롤러는 @CurrentUser로 사용자 id만 받는다). 세션에는 두 값만 둔다:
  * - uid: 로그인한 사용자 id(Long)
  * - csrf: CSRF 토큰(String, 256비트 난수)
  * 세션 ID·CSRF 토큰은 로그에 남기지 않는다.
@@ -66,7 +67,7 @@ public class SessionAuth {
         return csrf;
     }
 
-    /** 세션을 서버(Redis)에서 지운다. */
+    /** 세션을 서버(MySQL 세션 테이블)에서 지운다. */
     public void logout(HttpServletRequest request) {
         HttpSession session = request.getSession(false);
         if (session != null) {

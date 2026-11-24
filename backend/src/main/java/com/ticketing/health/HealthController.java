@@ -8,7 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** K8s 프로브용. liveness=/healthz(프로세스 생존만), readiness=/readyz(의존성 확인). /api/version은 배포된 이미지 버전 확인용. */
+/** K8s 프로브용. liveness=/healthz(프로세스 생존만), readiness=/readyz(MySQL 확인, Redis는 참고 항목). /api/version은 배포된 이미지 버전 확인용. */
 @RestController
 public class HealthController {
 
@@ -31,11 +31,16 @@ public class HealthController {
         return Map.of("status", "ok");
     }
 
+    /**
+     * 준비 여부는 MySQL 기준(200 ready / 503 unavailable). next: "redis"(up|down)는 참고용 항목이고 판단에 쓰지 않는다.
+     */
     @GetMapping("/readyz")
     public ResponseEntity<Map<String, String>> readyz() {
-        if (readiness.isReady()) {
-            return ResponseEntity.ok(Map.of("status", "ready"));
+        ReadinessService.Readiness r = readiness.check();
+        String redis = r.redisUp() ? "up" : "down";
+        if (r.ready()) {
+            return ResponseEntity.ok(Map.of("status", "ready", "redis", redis));
         }
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of("status", "unavailable"));
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of("status", "unavailable", "redis", redis));
     }
 }
