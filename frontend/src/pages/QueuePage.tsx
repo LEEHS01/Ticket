@@ -4,7 +4,7 @@ import { api, toApiError, type ApiError, type QueueState, type ShowDetail } from
 import { anyBooking, clearBooking, getBooking, setAdmitted, startBooking } from '../booking';
 import { shortDateTime } from '../format';
 import { useBookingChrome, usePageTitle } from '../shell';
-import { backoffMs, Illust, Notice, readNotice, Spinner, useCountdown, usePoller } from '../components/bits';
+import { Illust, retryDelayMs, retryWaitSec, Notice, readNotice, Spinner, useCountdown, usePoller } from '../components/bits';
 import { PosterArt } from '../components/PosterArt';
 
 /** 숨겨진 탭의 대기 상태 확인 간격. 서버는 30초 동안 폴링이 없으면 대기열에서 뺀다(계약 3.2.1). */
@@ -116,7 +116,7 @@ export function QueuePage() {
         if (e.code === 'RATE_LIMITED') return Math.max(1, e.retryAfterSec ?? 5) * 1000;
         failures.current += 1;
         setTrouble(e);
-        return backoffMs(failures.current);
+        return retryDelayMs(e, failures.current);
       }
     },
     { enabled: phase.kind === 'waiting', hiddenDelayMs: HIDDEN_POLL_MS, restartKey: kick },
@@ -240,7 +240,7 @@ export function QueuePage() {
 }
 
 function EnterError({ error, back, onRetry }: { error: ApiError; back: string; onRetry: () => void }) {
-  const wait = useCountdown(error.code === 'RATE_LIMITED' ? (error.retryAfterSec ?? 10) : null, error);
+  const wait = useCountdown(retryWaitSec(error), error);
   const titles: Record<string, string> = {
     NOT_ON_SALE: '지금은 예매할 수 없는 회차예요',
     SOLD_OUT: '매진된 회차예요',

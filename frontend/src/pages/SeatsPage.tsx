@@ -5,7 +5,7 @@ import { clearBooking, getBooking, setHold, setShowId, type HeldSeat } from '../
 import { useIsMobile } from '../data';
 import { clock, seatLabel, shortDateTime, spokenDuration, won } from '../format';
 import { useBookingChrome, usePageTitle } from '../shell';
-import { backoffMs, Notice, readNotice, Spinner, usePoller, useSecondsUntil, type NoticeData } from '../components/bits';
+import { Notice, readNotice, retryDelayMs, retryWaitSec, Spinner, useCountdown, usePoller, useSecondsUntil, type NoticeData } from '../components/bits';
 import { Icon } from '../components/Icon';
 import { Dialog, useToast } from '../components/overlay';
 import { SeatLegend, SeatMap } from '../components/SeatMap';
@@ -41,6 +41,7 @@ function SeatsInner({ perfId, admittedUntil }: { perfId: number; admittedUntil: 
   const [notice, setNotice] = useState<NoticeData | null>(() => readNotice(location.state));
   const [pending, setPending] = useState(false);
   const [holdError, setHoldError] = useState<ApiError | null>(null);
+  const holdWait = useCountdown(retryWaitSec(holdError), holdError);
   const [highlight, setHighlight] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const inFlight = useRef(false);
@@ -119,7 +120,7 @@ function SeatsInner({ perfId, admittedUntil }: { perfId: number; admittedUntil: 
         // 서버 일시 장애(5xx)·연결 끊김: 화면을 버리지 않고 간격을 늘려 계속
         failures.current += 1;
         setStale(true);
-        return backoffMs(failures.current);
+        return retryDelayMs(e, failures.current);
       }
     },
     { enabled: !timeUp, hiddenDelayMs: null, restartKey: kick },
@@ -155,7 +156,7 @@ function SeatsInner({ perfId, admittedUntil }: { perfId: number; admittedUntil: 
   }
 
   async function hold() {
-    if (!map || inFlight.current || selected.size === 0) return;
+    if (!map || inFlight.current || selected.size === 0 || holdWait > 0) return;
     inFlight.current = true;
     setPending(true);
     setHoldError(null);
@@ -277,7 +278,13 @@ function SeatsInner({ perfId, admittedUntil }: { perfId: number; admittedUntil: 
           tone={holdError.code === 'RATE_LIMITED' || holdError.code === 'NOT_ON_SALE' ? 'warn' : 'error'}
           title={holdError.isServerTrouble ? '잠시 후 다시 시도해 주세요' : '좌석을 확보하지 못했어요'}
           requestId={holdError.supportId}
-          actions={holdError.isRetryable ? <button type="button" className="btn btn--line btn--s" onClick={() => void hold()} disabled={pending}>다시 시도</button> : undefined}
+          actions={
+            holdError.isRetryable ? (
+              <button type="button" className="btn btn--line btn--s" onClick={() => void hold()} disabled={pending || holdWait > 0}>
+                {holdWait > 0 ? `${holdWait}초 뒤에 다시 시도` : '다시 시도'}
+              </button>
+            ) : undefined
+          }
         >
           <p>{holdError.message}</p>
         </Notice>

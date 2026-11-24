@@ -6,7 +6,7 @@ import { clearBooking, getBooking, setHold, type BookingSession } from '../booki
 import { invalidate, useResource } from '../data';
 import { clock, fullDateTime, PAYMENT_LABEL, seatLabel, spokenDuration, won } from '../format';
 import { useBookingChrome, usePageTitle } from '../shell';
-import { Badge, Notice, Spinner, useCountdown, useSecondsUntil } from '../components/bits';
+import { Badge, Notice, retryWaitSec, Spinner, useCountdown, useSecondsUntil } from '../components/bits';
 import { Icon } from '../components/Icon';
 import { Dialog } from '../components/overlay';
 import { PosterArt } from '../components/PosterArt';
@@ -57,7 +57,7 @@ function ConfirmView({ perfId, session, hold }: { perfId: number; session: Booki
   const keyRef = useRef<string | null>(null);
   const inFlight = useRef(false);
   const finished = useRef(false); // 화면을 떠나는 중이면 더는 상태를 바꾸지 않는다
-  const wait = useCountdown(error?.code === 'RATE_LIMITED' ? (error.retryAfterSec ?? 10) : null, error);
+  const wait = useCountdown(retryWaitSec(error), error);
   useBookingChrome('confirm', '예매 확인·결제', hold.expiresAt, '좌석 확보 남은 시간');
 
   // 포스터용 공연 정보(실패해도 예매에는 영향 없음)

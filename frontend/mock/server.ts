@@ -560,7 +560,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
 
   // 임시 저장소(Redis) 장애: 예매 진행만 503, 둘러보기·로그인·내 예매는 그대로
   if (redisDown && isBookingPath(method, path)) {
-    return send(res, 503, fail('SERVICE_UNAVAILABLE', '예매 처리 서버에 잠시 문제가 있어요. 잠시 후 다시 시도해 주세요.'));
+    return send(res, 503, fail('SERVICE_UNAVAILABLE', '예매 처리 서버에 잠시 문제가 있어요. 잠시 후 다시 시도해 주세요.'), { 'Retry-After': '5' });
   }
 
   // 인증

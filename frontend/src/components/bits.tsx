@@ -50,7 +50,7 @@ export function readNotice(state: unknown): NoticeData | null {
 
 /** 불러오기 실패: 알림 상자 + 다시 불러오기(요청 제한이면 남은 초) */
 export function LoadError({ error, onRetry, title }: { error: ApiError; onRetry: () => void; title: string }) {
-  const wait = useCountdown(error.code === 'RATE_LIMITED' ? (error.retryAfterSec ?? 10) : null, error);
+  const wait = useCountdown(retryWaitSec(error), error);
   return (
     <Notice
       tone={error.code === 'RATE_LIMITED' ? 'warn' : 'error'}
@@ -201,6 +201,23 @@ export function useSecondsUntil(iso: string | null): number | null {
 /** 서버 일시 장애·연결 끊김 때 다시 시도 간격: 5초 → 10초 → 20초 → 30초(최대) */
 export function backoffMs(failures: number) {
   return Math.min(30_000, 5_000 * 2 ** Math.max(0, failures - 1));
+}
+
+/**
+ * 폴링의 다음 시도 간격. 서버가 Retry-After를 주면(429, 503 SERVICE_UNAVAILABLE) 그 간격을 따르고(1~60초),
+ * 없으면 실패 횟수에 따라 늘린다.
+ */
+export function retryDelayMs(e: ApiError, failures: number) {
+  if (e.retryAfterSec !== null) return Math.min(60, Math.max(1, e.retryAfterSec)) * 1000;
+  return backoffMs(failures);
+}
+
+/** 다시 시도 단추를 잠가 둘 초: 요청 제한(429)이나 Retry-After가 붙은 서버 일시 장애(503) */
+export function retryWaitSec(e: ApiError | null | undefined): number | null {
+  if (!e) return null;
+  if (e.code === 'RATE_LIMITED') return e.retryAfterSec ?? 10;
+  if (e.isServerTrouble && e.retryAfterSec !== null) return Math.min(60, e.retryAfterSec);
+  return null;
 }
 
 /**

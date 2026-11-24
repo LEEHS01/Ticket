@@ -50,7 +50,7 @@ Docker 빌드 단계에서 `dist`에 모의 코드 흔적(조작 경로, 시연 
 | `SEAT_TAKEN` | 좌석을 고른 뒤 `POST /api/__mock/steal` `{ "seatIds": [...] }` 후 선택 완료 |
 | 좌석 확보 시간 만료 | 좌석 화면 주소에 `?shorthold=1` → 확보 20초 |
 | 좌석 선택 시간 만료 | 대기 화면 주소에 `?shortadmit=1` → 입장 40초 |
-| 임시 저장소(Redis) 장애 | `POST /api/__mock/redis?down=1` → 대기열·좌석·선점·확정이 `503`. `?down=0`으로 복구 |
+| 임시 저장소(Redis) 장애 | `POST /api/__mock/redis?down=1` → 대기열·좌석·선점·확정이 `503 SERVICE_UNAVAILABLE`(`Retry-After: 5`). `?down=0`으로 복구 |
 | v4가 없는 백엔드(v3) | `POST /api/__mock/v3?on=1` → 배너·공지·랭킹·배치 미리보기 `404`, v4 필드 없음. `?on=0`으로 복구 |
 | `RATE_LIMITED` | 검색어 `ratelimit` |
 | 목록 서버 오류 | 메인 주소에 `?fail=1` |
@@ -135,16 +135,16 @@ API 호출은 `src/api.ts` 한 곳에 모으고, 자료형은 계약 v3 + v4 그
 
 | 대상 | 보이는 탭 | 숨겨진 탭 | 429 | 5xx·연결 끊김 |
 |---|---|---|---|---|
-| 대기 상태 `GET /queue/status` | 서버 `pollAfterSeconds`(1~30초) | 10초(서버가 30초 무응답이면 대기에서 빼므로 멈추지 않음) | `Retry-After` | 화면을 그대로 두고 5→10→20→30초로 늘려 계속, "지금 다시 시도" 단추 |
+| 대기 상태 `GET /queue/status` | 서버 `pollAfterSeconds`(1~30초) | 10초(서버가 30초 무응답이면 대기에서 빼므로 멈추지 않음) | `Retry-After` | 화면을 그대로 두고 계속. `Retry-After`가 있으면(503 `SERVICE_UNAVAILABLE`은 5초) 그 간격, 없으면 5→10→20→30초. "지금 다시 시도" 단추 |
 | 좌석 상태 `GET /performances/:id/seats` | 4초 | 멈춤, 다시 보이면 즉시 | `Retry-After` | 위와 같음. "좌석 상태가 최신이 아닐 수 있어요" 안내 |
 
 ### 오류별 반응
 
-5xx는 코드 이름에 기대지 않고 상태 코드와 서버 `message`로 처리합니다(임시 저장소 장애의 `503`도 같음). 요청 번호는 5xx일 때만 보여 줍니다.
+5xx는 코드 이름에 기대지 않고 상태 코드와 서버 `message`로 처리합니다. 임시 저장소(Redis) 장애 때 예매 진행 요청(대기열·좌석·선점·확정)은 `503 SERVICE_UNAVAILABLE` + `Retry-After`를 받고, 화면은 그 초만큼 다시 시도 단추를 잠갔다가 풉니다(폴링은 그 간격으로 다시 시도). Redis가 비워진 뒤의 `QUEUE_TOKEN_INVALID`·`HOLD_EXPIRED`는 아래 표대로 처리하고 로그인은 유지됩니다. 요청 번호는 5xx일 때만 보여 줍니다.
 
 | 상황 | 화면의 반응 |
 |---|---|
-| 예매 진행 요청의 5xx(대기열 진입·선점·확정) | "잠시 후 다시 시도해 주세요" + 서버 문구 + 다시 시도 단추. 확정은 같은 `Idempotency-Key`로 재시도 |
+| 예매 진행 요청의 5xx(대기열 진입·선점·확정) | "잠시 후 다시 시도해 주세요" + 서버 문구 + 다시 시도 단추(`Retry-After` 동안 "N초 뒤에 다시 시도"로 잠금). 확정은 같은 `Idempotency-Key`로 재시도 |
 | `QUEUE_TOKEN_INVALID` | 진행 상태를 지우고 대기열부터 다시(대기 화면에서는 "다시 줄 서기") |
 | `QUEUE_NOT_ADMITTED` | 대기 화면으로 |
 | 좌석 선택 남은 시간 끝 | 대화상자 "좌석 선택 시간이 지났어요" → 공연 정보로 |
