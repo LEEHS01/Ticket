@@ -19,7 +19,7 @@
 - `/readyz`는 **MySQL 기준**. Redis 상태는 본문의 `redis: "up" | "down"`으로만 알린다.
 - 확정(`POST /reservations`)은 **선점이 없으면 먼저 `409 HOLD_EXPIRED`**로 답한다(예전에는 토큰 확인이 먼저라 Redis가 비면 401이었다).
 - 컨트롤러는 `@CurrentUser long userId`로 사용자 id만 받는다. 인증 확인은 `SessionAuth` 한 곳(토큰 방식으로 바꿔도 컨트롤러는 그대로).
-- 스키마: **`V3__db_sessions_and_login_lock.sql`**(V1·V2는 그대로). **서버 DB 계정에 `DELETE` 권한이 필요**해졌다(세션 행 삭제). 기존 DB는 한 번 `GRANT DELETE ON ticketing.* TO 'ticketing_app'@'%';`를 실행한다.
+- 스키마: **`V3__db_sessions_and_login_lock.sql`**(V1·V2는 그대로). **서버 DB 계정에 로그인 세션 테이블 두 개(`SPRING_SESSION`, `SPRING_SESSION_ATTRIBUTES`)에만 `DELETE`가 필요**해졌다(로그아웃·만료 정리). 예매·좌석·회원 테이블에는 DELETE를 주지 않는다. 새 DB는 `docker/mysql-init/01-init.sh`·`local/init-db.sh`가 migrate 전에 준다(5-8 DB 권한). 기존 DB는 migrate 뒤 한 번: `GRANT DELETE ON ticketing.SPRING_SESSION TO 'ticketing_app'@'%'; GRANT DELETE ON ticketing.SPRING_SESSION_ATTRIBUTES TO 'ticketing_app'@'%';`(앞서 `GRANT DELETE ON ticketing.*`를 줬다면 `REVOKE DELETE ON ticketing.* FROM 'ticketing_app'@'%';` 먼저).
 - 환경변수 추가: `REDIS_TIMEOUT_MS`(500), `SESSION_TOUCH_SECONDS`(60), `SESSION_CLEANUP_SECONDS`(300). 없어진 환경변수는 없다(`REDIS_*`는 대기열·선점용으로 그대로 필요).
 | 빌드 | Maven Wrapper (`./mvnw`, Maven 3.9.16) |
 | 이미지 | 멀티스테이지 → **alpine + jlink 맞춤 JRE + AppCDS**, non-root(UID 10001), 읽기 전용 루트 FS |
@@ -216,7 +216,7 @@ Docker로 실행할 때(v3 방식)는 `-e DB_NAME=ticketing_test … -e REDIS_DA
 | `DB_HOST` | ✅ | — | MySQL 호스트 |
 | `DB_PORT` | | `3306` | |
 | `DB_NAME` | | `ticketing` | |
-| `DB_USER` | ✅ | — | 서버: `ticketing_app`(SELECT/INSERT/UPDATE/**DELETE**, next부터 DELETE 필요 — 세션 행 삭제), migrate: 소유자 계정 |
+| `DB_USER` | ✅ | — | 서버: `ticketing_app`(SELECT/INSERT/UPDATE + **세션 테이블 두 개만 DELETE**, next), migrate: 소유자 계정 |
 | `DB_PASSWORD` | ✅ | — | |
 | `DB_SSL_MODE` | | `PREFERRED` | `DISABLED`·`PREFERRED`·`REQUIRED`·`VERIFY_CA`·`VERIFY_IDENTITY` |
 | `DB_POOL_SIZE` | | `10` | Hikari 최대 연결 수(1~100) |
@@ -508,7 +508,7 @@ POST /reservations (로그인, X-CSRF-Token, X-Queue-Token, Idempotency-Key, bod
 | 오류 응답 | 모든 오류를 `ApiError` 형태로. 5xx는 고정 문구 + `requestId` |
 | 보안 헤더 | `nosniff`, `Cache-Control: no-store`, `X-Frame-Options: DENY`, `CSP: default-src 'none'; frame-ancestors 'none'`, `Referrer-Policy: no-referrer` |
 | 요청 제한 | Redis 고정 창(1분), IP당 3개 버킷: general 120 / strict 30 / poll 240. 신뢰하는 사설 대역 프록시가 붙인 `X-Forwarded-For`만 반영. Redis 장애 때는 통과(fail-open, 5-10) |
-| DB 권한 | 서버는 `SELECT/INSERT/UPDATE/DELETE`만(next: DELETE는 세션 행 삭제용. 앱 코드의 `DELETE`는 세션 테이블뿐), DDL은 migrate용 소유자 계정 |
+| DB 권한 | 서버는 `SELECT/INSERT/UPDATE` + **`SPRING_SESSION`·`SPRING_SESSION_ATTRIBUTES`에만 `DELETE`**(next, 로그아웃·만료 정리). 예매·좌석·회원은 DELETE·DROP·ALTER 불가. DDL은 migrate용 소유자 계정. 테이블이 아직 없을 때(migrate 전) MySQL은 테이블 단위 GRANT를 `CREATE`와 함께일 때만 받으므로(`DELETE`만이면 ERROR 1146) 초기화 스크립트는 `GRANT DELETE, CREATE ON ticketing.SPRING_SESSION …`으로 준다. `CREATE`는 그 이름의 테이블을 만드는 권한뿐이다. 실측(새 DB): 초기화 → migrate → 가입·로그아웃·만료 세션 정리 권한 오류 0, 앱 계정의 `DELETE FROM reservations/seats/users`·`DROP`·`ALTER`는 ERROR 1142 |
 | 저작권 | 시드의 공연명·출연진·장소는 모두 지어낸 것. 포스터는 `{seed, hue}` 값만 |
 | 의존성 | Spring Boot BOM. starter 4개 + Spring Session JDBC(next) + spring-security-crypto + Flyway + MySQL 드라이버. Actuator·Spring Security 전체 미사용 |
 
@@ -610,7 +610,6 @@ v3에서 Spring Session·spring-security-crypto가 늘었지만 의존성 레이
 - 세션 값은 Spring Session 기본(JDK 직렬화 BLOB)으로 저장됩니다. 넣는 값이 `Long`·`String` 둘뿐이라 문제는 없지만, 세션 테이블에 쓰기 권한을 가진 쪽은 신뢰 범위 안에 있어야 합니다(앱 계정만 쓰기).
 - next: 로그인한 요청마다 MySQL `SELECT` 1번이 듭니다(v3는 Redis). 대기 화면 폴링도 MySQL을 1번 씁니다. 동시 접속이 크게 늘면 MySQL 읽기 부하가 먼저 늘어나므로, 폴링 간격·읽기 복제본·토큰 방식 전환(인증 확인이 `SessionAuth` 한 곳이라 가능)을 검토합니다.
 - next: 세션 유휴 만료는 마지막 접근 기록 간격(60초)만큼 일찍 올 수 있고, 세션 시각은 앱 서버 시계로 씁니다(로그인 잠금은 DB 시계).
-- next: 서버 DB 계정에 `DELETE`가 필요합니다. 테이블 단위로만 주려면(`GRANT DELETE ON ticketing.SPRING_SESSION …`) 테이블이 생긴 뒤(migrate 뒤) 관리자가 따로 실행해야 해서, 지금은 DB 단위로 줍니다.
 - next: 장애 전환 때 MySQL 복제 지연만큼의 최근 세션(그 사이 로그인·세션 ID 재발급)은 없을 수 있습니다 → 그 사용자만 다시 로그인.
 - 쿠키 이름에 `__Host-` 접두사(도메인·경로 고정 강제)를 쓰지 않았습니다. 로컬 http에서는 `Secure` 없이 쓸 수 없기 때문입니다. 운영 https만 있다면 `__Host-TKT_SESSION`으로 바꾸는 것을 고려하세요.
 - 로그인 잠금은 계정 단위라, 남의 이메일로 일부러 5번 틀려 15분 동안 잠그는 방해가 가능합니다(IP당 strict 30/분으로 완화). 더 강하게 하려면 IP+계정 조합이나 CAPTCHA가 필요합니다.
