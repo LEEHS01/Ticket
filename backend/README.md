@@ -1,4 +1,4 @@
-# 티켓 예매 API (backend) — v3
+# 티켓 예매 API (backend) — next (v3 계약 유지)
 
 공연 찾기 → 회차 선택 → **로그인** → **접속 대기열** → **좌석 선택(임시 선점)** → 예매 확정 → **내 예매**(조회·취소)를 제공하는 **상태 없는** Spring Boot API입니다.
 계약(엔드포인트·응답 형태·오류 코드)은 [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) 4장(v3)이 기준입니다.
@@ -7,8 +7,20 @@
 |---|---|
 | 언어/프레임워크 | Java 21, Spring Boot 3.5.16 (Spring MVC + **가상 스레드**) |
 | DB 접근 | Spring JDBC `JdbcClient` (JPA 미사용), Flyway |
-| 로그인 세션 | **Spring Session Data Redis**(서버 메모리 세션 없음) + BCrypt(`spring-security-crypto`) + 자체 CSRF 필터 |
-| 짧게 사는 상태 | Redis 7 (Lettuce) + **Lua 스크립트**: 세션, 대기열, 좌석 선점, 로그인 실패 횟수, 요청 제한, 멱등키 |
+| 로그인 세션 | **Spring Session JDBC → MySQL**(서버 메모리 세션 없음) + BCrypt(`spring-security-crypto`) + 자체 CSRF 필터 |
+| 잃으면 안 되는 상태 | **MySQL**: 회원·공연·좌석 판매·예매 + **로그인 세션 + 로그인 실패 잠금** |
+| 잃어도 되는 상태 | Redis 7 (Lettuce) + **Lua 스크립트**: 대기열, 좌석 선점, 요청 제한, 멱등키(+ 없는 이메일의 로그인 실패 횟수) |
+
+### v3 → next에서 바뀐 것 (API 계약은 v3 그대로)
+- 기준: **"잃으면 안 되는 것은 MySQL, 잃어도 되는 것은 Redis"**(`docs/next/PLAN.md` 2.1). 나중에 멀티 클라우드 DR로 갈 때 클라우드 사이에 복제할 저장소는 MySQL 하나이고, Redis는 클라우드마다 따로 두며 장애 전환 뒤에는 빈 상태로 시작한다.
+- **로그인 세션 Redis → MySQL**(Spring Session JDBC, 5-2). 쿠키·만료·로그인 시 세션 ID 재발급·로그아웃·CSRF 동작은 같다.
+- **로그인 실패 잠금 Redis → `users` 열**(`failed_login_count`, `failed_login_until`). 장애 전환이나 Redis 비우기로 잠금이 풀리지 않는다.
+- **Redis가 비어도 안전**하고(중복 판매 없음, 로그인 유지, 대기자는 다시 줄 서기, 선점 중이던 사람은 `409 HOLD_EXPIRED`), **Redis가 죽어도** 둘러보기·로그인·내 예매는 동작하며 예매 진행만 `503 SERVICE_UNAVAILABLE`(5-10).
+- `/readyz`는 **MySQL 기준**. Redis 상태는 본문의 `redis: "up" | "down"`으로만 알린다.
+- 확정(`POST /reservations`)은 **선점이 없으면 먼저 `409 HOLD_EXPIRED`**로 답한다(예전에는 토큰 확인이 먼저라 Redis가 비면 401이었다).
+- 컨트롤러는 `@CurrentUser long userId`로 사용자 id만 받는다. 인증 확인은 `SessionAuth` 한 곳(토큰 방식으로 바꿔도 컨트롤러는 그대로).
+- 스키마: **`V3__db_sessions_and_login_lock.sql`**(V1·V2는 그대로). **서버 DB 계정에 `DELETE` 권한이 필요**해졌다(세션 행 삭제). 기존 DB는 한 번 `GRANT DELETE ON ticketing.* TO 'ticketing_app'@'%';`를 실행한다.
+- 환경변수 추가: `REDIS_TIMEOUT_MS`(500), `SESSION_TOUCH_SECONDS`(60), `SESSION_CLEANUP_SECONDS`(300). 없어진 환경변수는 없다(`REDIS_*`는 대기열·선점용으로 그대로 필요).
 | 빌드 | Maven Wrapper (`./mvnw`, Maven 3.9.16) |
 | 이미지 | 멀티스테이지 → **alpine + jlink 맞춤 JRE + AppCDS**, non-root(UID 10001), 읽기 전용 루트 FS |
 
@@ -114,7 +126,7 @@ curl.exe http://127.0.0.1:18080/readyz       # {"status":"ready"}
 ```
 
 - 로컬은 http라 `.env.example`의 `SESSION_COOKIE_SECURE=false`가 필요합니다(운영 기본값은 `true`).
-- 복제본을 하나 더 띄우려면 이름·포트만 바꿔 같은 명령을 한 번 더 실행하세요(예: `tkbe-api-2`, `18081`). 세션이 Redis에 있어 어느 쪽으로 요청해도 로그인이 유지됩니다.
+- 복제본을 하나 더 띄우려면 이름·포트만 바꿔 같은 명령을 한 번 더 실행하세요(예: `tkbe-api-2`, `18081`). 세션이 MySQL에 있어 어느 쪽으로 요청해도 로그인이 유지됩니다(next).
 - 이 PC에서는 `localhost:8080`을 WSL의 다른 서버가, `localhost:8088`을 통합 스택이 쓰고 있어 **18080**을 씁니다.
 
 ### 1-5. curl로 흐름 확인 (쿠키 저장)
@@ -164,30 +176,34 @@ docker compose -f docker-compose.dev.yml down      # 데이터 볼륨까지 지�
 |---|---|---|---|
 | 서비스 단위 테스트 | `AuthServiceTest`, `SessionAndCsrfTest`, `ShowServiceTest`, `QueueServiceTest`, `SeatServiceTest`, `ReservationServiceTest`, `VenueLayoutTest`, `EmailPrivacyAndCodeTest` | `test` | 없음(가짜 저장소 주입) |
 | HTTP 계층 테스트 | `ApiWebTest` (MockMvc, 세션은 MockHttpSession) | `test` | 없음 |
-| 통합 테스트 | `it/AuthSessionIT`, `it/SeatConcurrencyIT`, `it/QueueIT`, `migrate/SeedIdContinuityIT` | `verify` | 실제 MySQL·Redis |
+| 통합 테스트 | `it/AuthSessionIT`, `it/RedisLossIT`, `it/RedisDownIT`, `it/SessionCleanupIT`, `it/SeatConcurrencyIT`, `it/QueueIT`, `migrate/SeedIdContinuityIT` | `verify` | 실제 MySQL·Redis (`RedisDownIT`는 `redis-server` 실행 파일도, 없으면 건너뜀) |
 
 통합 테스트가 확인하는 것(실제 MySQL·Redis·Lua·HTTP):
-1. **애플리케이션 인스턴스 2개**(같은 Redis)를 띄우고, 인스턴스 1에서 받은 세션 쿠키를 인스턴스 2에 보내도 **로그인이 유지된다**. 세션 키가 Redis에 있고 TTL이 30분이며, 로그아웃하면 Redis에서 지워진다.
-2. **CSRF 토큰 없이**(또는 다른 값으로) 상태 변경 요청 → **403 `CSRF_INVALID`**. 세션 없이 로그인 요청도 403.
-3. **A 계정의 예매를 B 계정이** 목록에서 볼 수 없고, 취소하면 **404**. A의 좌석은 그대로.
-4. **로그인(가입) 전후로 세션 ID가 바뀌고**(옛 ID는 Redis에서 사라짐) CSRF 토큰도 바뀐다. 쿠키는 `HttpOnly; SameSite=Lax; Path=/`.
-5. **같은 계정이 두 번에 나눠 5석**을 확정하려 하면 두 번째가 **409 `BOOKING_LIMIT_EXCEEDED`**.
-6. 한 인스턴스에서 대기열·선점 → **다른 인스턴스에서 확정** → 내 예매 → 취소 → 로그아웃 후 401.
-7. 로그인 5회 연속 실패 → **429 `ACCOUNT_LOCKED` + `Retry-After`**(실패가 두 인스턴스로 나뉘어도 Redis에서 합산). 없는 이메일과 틀린 비밀번호의 응답이 같다.
-8. (v2부터) 같은 좌석 동시 선점 50건 → 1건만 성공 / Redis 선점 키를 지운 뒤 두 계정이 같은 좌석 확정 → DB에서 1건만 / `QUEUE_MAX_ACTIVE=2`에서 5명 진입 → 완료·이탈마다 대기 1번 승격 / 입장 전 토큰 403, 남의 토큰 401.
+1. **애플리케이션 인스턴스 2개**(같은 DB)를 띄우고, 인스턴스 1에서 받은 세션 쿠키를 인스턴스 2에 보내도 **로그인이 유지된다**. 세션은 `SPRING_SESSION` 1행 + 속성 2행(uid, csrf)이고 Redis에는 세션 키가 없다. 유휴 만료 1800초. 다른 인스턴스에서 로그아웃해도 세션 행과 속성 행이 지워진다.
+2. **세션 쓰기 줄이기**: 60초 안의 연속 요청은 `LAST_ACCESS_TIME`을 바꾸지 않고, 마지막 접근이 2분 전이면 다음 요청이 한 번 갱신한다.
+3. **요청당 DB 왕복**: 로그인한 `GET /api/queue/status` 한 번에 서버가 받은 문장 수 = **1**(세션 SELECT만. `SHOW GLOBAL STATUS LIKE 'Questions'` 차이로 측정).
+4. **CSRF 토큰 없이**(또는 다른 값으로) 상태 변경 요청 → **403 `CSRF_INVALID`**. 세션 없이 로그인 요청도 403.
+5. **로그인(가입) 전후로 세션 ID가 바뀌고**(옛 ID로는 찾을 수 없음) CSRF 토큰도 바뀐다. 쿠키는 `HttpOnly; SameSite=Lax; Path=/`.
+6. A 계정의 예매를 B가 보거나 취소할 수 없다(404) / 같은 계정 3석 + 2석 → `409 BOOKING_LIMIT_EXCEEDED` / 한 인스턴스에서 선점 → 다른 인스턴스에서 확정 → 같은 멱등키 재전송은 같은 응답 → 취소 → 로그아웃 후 401.
+7. 로그인 5회 연속 실패 → **429 `ACCOUNT_LOCKED` + `Retry-After`**(두 인스턴스로 나눠 실패해도 `users` 열에서 합산). 없는 이메일과 틀린 비밀번호의 응답이 같다.
+8. **Redis를 통째로 비우면**(`RedisLossIT`, 장애 전환과 같은 상황): 로그인·CSRF 유지 / 선점 중이던 확정은 `409 HOLD_EXPIRED`, 좌석 조회는 `401 QUEUE_TOKEN_INVALID`, 다른 사람이 그 좌석을 사고 판매는 1건 / 팔린 좌석은 비운 뒤에도 `SEAT_TAKEN`, 옛 선점이 되살아나도(덤프 복원) DB가 두 번째 판매를 막음 / 대기자는 401 후 다시 진입 / 로그인 잠금은 유지, 잠금 시각이 지나면 풀리고 다음 실패는 1부터.
+9. **Redis를 멈추면**(`RedisDownIT`, 테스트 전용 `redis-server`를 껐다 켬): 공연 목록·상세, `/auth/me`, 로그인(없는 이메일은 401), 가입, 내 예매 조회·취소, `/readyz`(redis: down) = 정상 / 대기열 진입·상태·이탈, 좌석, 선점, 확정 = `503 SERVICE_UNAVAILABLE` + `Retry-After: 5`, 응답에 내부 정보 없음, 실측 8ms / Redis를 다시 켜면 **서버 재시작 없이** 진입 200.
+10. **만료 세션 정리를 두 서버가 동시에**(`SessionCleanupIT`): 만료 1300개 + 유효 20개 → 예외 없이 만료 세션과 속성만 지워짐(실측 707건 / 593건으로 나눠 가져감).
+11. (v2부터) 같은 좌석 동시 선점 50건 → 1건만 성공 / Redis 선점 키를 지운 뒤 두 계정이 같은 좌석 확정 → DB에서 1건만 / `QUEUE_MAX_ACTIVE=2`에서 5명 진입 → 완료·이탈마다 대기 1번 승격 / 입장 전 토큰 403, 남의 토큰 401.
 
-```powershell
-# 1-1로 MySQL·Redis를 먼저 띄운 뒤 (Maven 캐시는 named volume ticketing-m2에 보관)
-docker run --rm -v "${PWD}:/src" -v ticketing-m2:/root/.m2 -w /src --network tkbe-dev_default `
-  -e DB_HOST=mysql -e DB_NAME=ticketing_test -e DB_USER=ticketing -e DB_PASSWORD=<.env의 DB_OWNER_PASSWORD> `
-  -e REDIS_HOST=redis -e REDIS_PASSWORD=<.env의 REDIS_PASSWORD> -e REDIS_DATABASE=1 `
-  maven:3.9-eclipse-temurin-21 ./mvnw -B verify
+**WSL(`ticketing` 배포판)에서 실행**(next에서 검증한 방법. JDK 21·MySQL 8.0·Redis 7이 배포판 안에 있다):
 
-# DB 없이 단위 테스트만
-docker run --rm -v "${PWD}:/src" -v ticketing-m2:/root/.m2 -w /src maven:3.9-eclipse-temurin-21 ./mvnw -B test
+```bash
+# 한 번만: 검증용 DB와 계정(기존 ticketing DB는 건드리지 않음). 비밀번호는 ~/.tkn-next.env(권한 600)에만
+sudo mysql -e "CREATE DATABASE ticketing_next_test; CREATE USER 'tkn_owner'@'localhost' IDENTIFIED BY '<임의 값>'; GRANT ALL ON ticketing_next_test.* TO 'tkn_owner'@'localhost';"
+
+cd /mnt/d/ticketing-next/backend
+DB_HOST=127.0.0.1 DB_NAME=ticketing_next_test DB_USER=tkn_owner DB_PASSWORD='<임의 값>' \
+REDIS_HOST=127.0.0.1 REDIS_DATABASE=2 ./mvnw -B verify
 ```
 
-통합 테스트는 개발 데이터와 섞이지 않게 **`ticketing_test` DB와 Redis DB 1번**을 쓰고, 테스트마다 Redis DB 1을 비웁니다.
+Docker로 실행할 때(v3 방식)는 `-e DB_NAME=ticketing_test … -e REDIS_DATABASE=1`을 주고 `maven:3.9-eclipse-temurin-21` 컨테이너에서 `./mvnw -B verify`를 돌립니다.
+통합 테스트는 개발 데이터와 섞이지 않게 **별도 DB와 별도 Redis DB 번호**를 쓰고, 테스트마다 그 Redis DB만 비웁니다(`FLUSHDB`. 앱은 그 DB 하나만 쓰므로 앱 입장에서는 `FLUSHALL`과 같다).
 단위 테스트의 대기열·선점 가짜 구현은 Lua와 같은 규칙을 흉내 낸 것이고, **Lua 자체의 동작은 통합 테스트가 실제 Redis로 검증**합니다. 단위 테스트의 BCrypt는 속도를 위해 cost 4입니다(운영 12).
 
 ---
@@ -199,16 +215,19 @@ docker run --rm -v "${PWD}:/src" -v ticketing-m2:/root/.m2 -w /src maven:3.9-ecl
 | `DB_HOST` | ✅ | — | MySQL 호스트 |
 | `DB_PORT` | | `3306` | |
 | `DB_NAME` | | `ticketing` | |
-| `DB_USER` | ✅ | — | 서버: `ticketing_app`(SELECT/INSERT/UPDATE만), migrate: 소유자 계정 |
+| `DB_USER` | ✅ | — | 서버: `ticketing_app`(SELECT/INSERT/UPDATE/**DELETE**, next부터 DELETE 필요 — 세션 행 삭제), migrate: 소유자 계정 |
 | `DB_PASSWORD` | ✅ | — | |
 | `DB_SSL_MODE` | | `PREFERRED` | `DISABLED`·`PREFERRED`·`REQUIRED`·`VERIFY_CA`·`VERIFY_IDENTITY` |
 | `DB_POOL_SIZE` | | `10` | Hikari 최대 연결 수(1~100) |
-| `REDIS_HOST` | ✅ (서버) | — | migrate 모드에서는 쓰지 않음 |
+| `REDIS_HOST` | ✅ (서버) | — | 대기열·선점·멱등키·요청 제한용. migrate 모드에서는 쓰지 않음. 서버는 Redis가 없어도 뜨고 둘러보기·로그인은 동작 |
 | `REDIS_PORT` | | `6379` | |
 | `REDIS_PASSWORD` | | (없음) | |
 | `REDIS_SSL` | | `false` | ElastiCache 전송 암호화 시 `true` |
 | `REDIS_DATABASE` | | `0` | 0~15 |
+| `REDIS_TIMEOUT_MS` | | `500` | **next** Redis 명령·연결 시간 초과(50~10000). 짧게 두어 Redis 장애 때 예매 진행 요청이 빨리 503으로 끝나게 한다 |
 | `SESSION_IDLE_MINUTES` | | `30` | **v3** 요청이 없으면 이 시간(분) 뒤 세션 만료(1~1440) |
+| `SESSION_TOUCH_SECONDS` | | `60` | **next** 세션의 마지막 접근 시각을 DB에 쓰는 최소 간격(0~600초). 0이면 요청마다 쓴다 |
+| `SESSION_CLEANUP_SECONDS` | | `300` | **next** 만료 세션 정리 주기(10~86400초). 돌지 않아도 결과는 틀리지 않는다(5-2) |
 | `SESSION_COOKIE_SECURE` | | `true` | **v3** 세션 쿠키 `Secure`. 로컬 http는 **`false`로 지정** |
 | `SEED_DEMO_EMAIL` | | — | **v3** migrate 전용. 시연 계정 이메일(비밀번호와 둘 다 있을 때만) |
 | `SEED_DEMO_PASSWORD` | | — | **v3** migrate 전용. 시연 계정 비밀번호(8자 이상, 72바이트 이하) |
@@ -240,10 +259,14 @@ backend/
 └─ src/
    ├─ main/java/com/ticketing/
    │  ├─ TicketingApplication.java   실행 모드 분기(서버 / migrate)
-   │  ├─ config/        AppProperties(환경변수 검증), JacksonConfig(엄격한 JSON), WebConfig(CORS), Clock
-   │  ├─ web/           필터: 요청 ID·접근 로그 → 보안 헤더 → body 16KB → 요청 제한 → (Spring Session) → CSRF
-   │  ├─ common/        ErrorCode, ApiException(details·Retry-After), 전역 예외 처리, /error 대체, Transactions
-   │  ├─ auth/          v3: 가입·로그인(AuthService), 세션 읽고 쓰기(SessionAuth), CsrfFilter, 사용자·로그인 실패 저장소
+   │  ├─ config/        AppProperties(환경변수 검증), JacksonConfig(엄격한 JSON), WebConfig(CORS·@CurrentUser), Clock,
+   │  │                 RedisClientConfig(next: 짧은 시간 초과·끊기면 즉시 거절·빠른 재연결)
+   │  ├─ web/           필터: 요청 ID·접근 로그 → 보안 헤더 → body 16KB → 요청 제한 → (Spring Session = MySQL) → CSRF
+   │  ├─ common/        ErrorCode, ApiException(details·Retry-After), 전역 예외 처리(Redis 실패 → 503), /error 대체,
+   │  │                 Transactions, RedisBackoff(Redis 없어도 되는 곳의 짧은 차단기)
+   │  ├─ auth/          가입·로그인(AuthService), 세션 읽고 쓰기(SessionAuth), @CurrentUser, CsrfFilter, 사용자 저장소(잠금 열 포함),
+   │  │                 next: SessionConfig(Spring Session JDBC 조립), ThrottledSessionRepository(쓰기 줄이기),
+   │  │                 SessionTransactions(조회는 트랜잭션 없이), SessionCleanup(만료 세션 정리, SKIP LOCKED)
    │  ├─ show/          공연 목록·상세: controller → service → repository(JDBC), 상태 규칙(SaleStatus)
    │  ├─ queue/         대기열: QueueService → QueueStore(Redis Lua), 토큰 생성, Redis 키 이름
    │  ├─ seat/          좌석 화면·선점: SeatService → SeatRepository(JDBC) + HoldStore(Redis Lua)
@@ -253,30 +276,41 @@ backend/
    │  └─ migrate/       시드·공연장 배치 템플릿(migrate 프로필에서만 로드)
    ├─ main/resources/
    │  ├─ application.yml, application-migrate.yml
-   │  ├─ db/migration/V1__init.sql, V2__users_and_reservation_owner.sql   (Flyway)
-   │  └─ redis/*.lua    queue-common/enter/poll/peek/leave, hold-create/release, login-failure, rate-limit
+   │  ├─ db/migration/V1__init.sql, V2__users_and_reservation_owner.sql, V3__db_sessions_and_login_lock.sql   (Flyway)
+   │  └─ redis/*.lua    queue-common/enter/poll/peek/leave, hold-create/release, login-failure(없는 이메일만), rate-limit
    └─ test/java/com/ticketing/
       ├─ support/       InMemoryStore(가짜 저장소), TestApp(서비스 조립)
       ├─ auth/, show/, queue/, seat/, reservation/, migrate/, web/   단위·HTTP 테스트
-      └─ it/            실제 MySQL·Redis 통합 테스트(*IT). AuthSessionIT는 앱 인스턴스 2개
+      └─ it/            실제 MySQL·Redis 통합 테스트(*IT). AuthSessionIT는 앱 인스턴스 2개,
+                        RedisLossIT(Redis 비우기), RedisDownIT(전용 redis-server를 껐다 켬), SessionCleanupIT(동시 정리)
 ```
 
 ### 데이터 모델
 
 ```
-users ─────────────────────────────┐ (v3: email 유니크, password_hash=BCrypt, login_enabled)
+users ─────────────────────────────┐ (email 유니크, password_hash=BCrypt, login_enabled,
+                                    │  next: failed_login_count, failed_login_until = 로그인 잠금)
 shows ─┬─ grades (show_id, code, price)                     │
        └─ performances ─── seats (status AVAILABLE|SOLD, reservation_id)
                               │                             │
 reservations (user_id ◄──────┼─────────────────────────────┘) ── reservation_seats (예매 당시 좌석·가격)
+
+SPRING_SESSION (세션 1행: SESSION_ID 유니크, 시각은 epoch ms) ── SPRING_SESSION_ATTRIBUTES (속성마다 1행: uid, csrf. ON DELETE CASCADE)
 ```
 
-### Redis 키
+### MySQL에 둔 짧게 사는 상태 (next)
+
+| 테이블·열 | 내용 | 인덱스 | 수명·정리 |
+|---|---|---|---|
+| `SPRING_SESSION` | 세션 1행: `PRIMARY_ID`(내부 키), `SESSION_ID`(쿠키 값, 로그인 때 재발급), 생성·마지막 접근 시각, `MAX_INACTIVE_INTERVAL`(1800초), `EXPIRY_TIME` | PK, `IX1(SESSION_ID)` 유니크 — 요청마다 이것으로 찾음, `IX2(EXPIRY_TIME)` — 정리, `IX3(PRINCIPAL_NAME)` — 호환용(안 씀) | 유휴 30분. 만료 행은 읽을 때 무효 처리 + `SessionCleanup`이 5분마다 정리 |
+| `SPRING_SESSION_ATTRIBUTES` | 속성 1행씩: `uid`(Long), `csrf`(String), JDK 직렬화 BLOB | PK(`SESSION_PRIMARY_ID`, `ATTRIBUTE_NAME`) | 세션과 함께 삭제(CASCADE) |
+| `users.failed_login_count`, `users.failed_login_until` | 연속 로그인 실패 횟수와 "이 시각까지 기억"(실패마다 지금+15분). 횟수 ≥ 5면 그 시각이 잠금 해제 시각 | PK(id), `uk_users_email` — 로그인 때 이미 읽는 행 | 시각이 지나면 0으로 본다(정리 작업 없음). 로그인 성공 시 0 |
+
+### Redis 키 (next: 전부 "잃어도 되는 상태". 세션 키 `ticketing:session:*`는 더 이상 없다)
 
 | 키 | 타입 | 내용 | 수명 |
 |---|---|---|---|
-| `ticketing:session:sessions:{세션ID}` | HASH | **v3** Spring Session: 생성·마지막 접근 시각 + 속성 `uid`(사용자 id), `csrf`(CSRF 토큰) | 유휴 30분(요청마다 연장) |
-| `auth:fail:{SHA-256(이메일)}` | STRING | **v3** 연속 로그인 실패 횟수(5 이상이면 잠김) | 마지막 실패로부터 15분 |
+| `auth:fail:{SHA-256(이메일)}` | STRING | **없는 이메일**의 연속 로그인 실패 횟수(5 이상이면 429). next: 있는 계정은 `users` 열 | 마지막 실패로부터 15분 |
 | `queue:{회차}:waiting` | ZSET | 대기자(점수 = 진입 순번) | — |
 | `queue:{회차}:seen` | ZSET | 대기자의 마지막 폴링 시각(ms) | — |
 | `queue:{회차}:active` | ZSET | 입장자(점수 = 입장 만료 ms) | — |
@@ -297,35 +331,54 @@ reservations (user_id ◄──────┼───────────�
 **왜?** 가입·잠금 규칙, 대기열 규칙, 선점 전부/전무, 확정 시 DB 방어선, 4석 제한, 본인 예매만 취소를 DB·Redis 없이 밀리초 단위로 테스트할 수 있습니다(`InMemoryStore`).
 세션은 컨트롤러에서 `SessionAuth`로 사용자 id만 꺼내 서비스에 넘깁니다 → 서비스는 HTTP 세션을 모르고, 테스트는 사용자 id만 주면 됩니다.
 
-### 5-2. 로그인과 세션 (v3)
+### 5-2. 로그인과 세션 (next: MySQL)
 
-**세션은 Redis에 둔다(Spring Session Data Redis).** 브라우저에는 세션 ID만 쿠키 `TKT_SESSION`으로 주고, 세션 내용(로그인한 사용자 id, CSRF 토큰)은 Redis HASH에 있습니다.
+**세션은 MySQL에 둔다(Spring Session JDBC).** 브라우저에는 세션 ID만 쿠키 `TKT_SESSION`으로 주고, 세션 내용(로그인한 사용자 id, CSRF 토큰)은 `SPRING_SESSION`(1행) + `SPRING_SESSION_ATTRIBUTES`(속성마다 1행)에 있습니다.
+**왜 Redis에서 옮겼나**: 나중에 멀티 클라우드 DR로 넘어갈 때 클라우드 사이에 복제하는 저장소는 MySQL 하나이고 Redis는 빈 상태로 시작합니다. 세션이 Redis에 있으면 장애 전환·Redis 재시작마다 **전원 로그아웃**됩니다. 로그인은 "잃으면 안 되는 상태"로 분류했습니다(`docs/next/PLAN.md` 3장).
 
-| | 서버 메모리 세션(기본 Tomcat) | **Redis 세션(이 프로젝트)** |
-|---|---|---|
-| 파드가 여러 개 | 로그인한 파드로만 가야 함 → **스티키 세션** 필요(ALB 쿠키 고정) | 어느 파드로 가도 같은 세션 |
-| 파드 재시작·롤링 업데이트·HPA 축소 | 그 파드의 사용자 전원 **로그아웃** | 영향 없음 |
-| 로그아웃·강제 만료 | 그 파드에서만 | Redis에서 지우면 즉시 전체 무효 |
-| 추가 인프라 | 없음 | 없음(대기열·선점용 Redis를 이미 씀) |
+| | 서버 메모리 세션(기본 Tomcat) | Redis 세션(v3) | **MySQL 세션(next)** |
+|---|---|---|---|
+| 파드가 여러 개 | **스티키 세션** 필요 | 어느 파드로 가도 같음 | 어느 파드로 가도 같음 |
+| 파드 재시작·롤링 업데이트 | 그 파드 사용자 **로그아웃** | 영향 없음 | 영향 없음 |
+| Redis 재시작·비우기·장애 전환 | — | **전원 로그아웃** | **영향 없음**(복제 지연만큼의 최근 로그인만 다시) |
+| 로그아웃·강제 만료 | 그 파드에서만 | `DEL` → 즉시 전체 무효 | `DELETE` → 즉시 전체 무효 |
+| 요청당 비용 | 메모리 | Redis 왕복 1~2번 | **MySQL SELECT 1번**(+ 1분에 1번 UPDATE) |
 
-실측: 앱 인스턴스 2개(통합 테스트) / 컨테이너 2개(curl)에서 한쪽에서 로그인·선점하고 다른 쪽에서 확정·취소해도 그대로 동작했습니다.
+실측: 앱 인스턴스 2개(통합 테스트) / WSL 서버 2개(curl)에서 한쪽에서 가입·로그인하고 다른 쪽에서 인증·확정·로그아웃이 됐고, Redis DB를 `FLUSHDB`한 직후에도 양쪽에서 로그인이 유지됐으며, 서버를 재시작해도 같은 쿠키로 로그인 상태였습니다.
 
-**쿠키**: `TKT_SESSION=<세션 ID(base64)>; Path=/; HttpOnly; SameSite=Lax` + 운영은 `Secure`(`SESSION_COOKIE_SECURE`).
+**쿠키**(v3와 같음): `TKT_SESSION=<세션 ID(base64)>; Path=/; HttpOnly; SameSite=Lax` + 운영은 `Secure`(`SESSION_COOKIE_SECURE`).
 `HttpOnly` → 자바스크립트가 읽을 수 없어 XSS로 세션을 훔치기 어렵다. `SameSite=Lax` → 다른 사이트에서 오는 POST에 쿠키가 실리지 않는다(CSRF 1차 방어). URL에 세션 ID를 붙이지 않는다(`tracking-modes: cookie`).
-세션 ID는 Spring Session이 만드는 UUID(122비트 난수). **유휴 만료** `SESSION_IDLE_MINUTES`(30분): 요청이 올 때마다 Redis TTL이 연장됩니다. 저장소는 `repository-type: default`(세션당 HASH 하나 + TTL, Redis 키스페이스 알림 불필요).
+세션 ID는 Spring Session이 만드는 UUID(122비트 난수). **유휴 만료** `SESSION_IDLE_MINUTES`(30분).
 
-**로그인 시 세션 ID 재발급**(`request.changeSessionId()`): 공격자가 미리 심어 둔 세션 ID로 피해자가 로그인하게 만드는 **세션 고정 공격**을 막습니다. 옛 ID의 Redis 키는 사라집니다(통합 테스트 4번). **로그아웃**은 `session.invalidate()` → Redis에서 세션 삭제 + 쿠키 만료.
+**로그인 시 세션 ID 재발급**(`request.changeSessionId()` → `UPDATE SPRING_SESSION SET SESSION_ID = 새 값`): 세션 고정 공격을 막습니다. 옛 ID로는 더 찾을 수 없습니다(통합 테스트 5번). **로그아웃**은 `session.invalidate()` → 세션 행 삭제(속성은 `ON DELETE CASCADE`) + 쿠키 만료.
+
+**인증 확인은 한 곳**: 컨트롤러는 `@CurrentUser long userId` 인자로 사용자 id만 받고, 값은 `CurrentUserResolver` → `SessionAuth.requireUserId()`가 채웁니다(없으면 401). 나중에 세션 대신 토큰 방식으로 바꿔도 `SessionAuth`만 바뀌고 컨트롤러·서비스는 그대로입니다. 입력 검증(400)이 먼저 보이도록 이 인자는 `@RequestBody` 뒤에 둡니다(v3와 같은 오류 우선순위).
+
+**세션 테이블 쓰기·읽기 줄이기**(`auth/SessionConfig.java`에서 직접 조립):
+
+| 손댄 곳 | 기본 Spring Session JDBC | 이 프로젝트 | 효과 |
+|---|---|---|---|
+| 마지막 접근 시각 | 요청마다 `UPDATE` | `SESSION_TOUCH_SECONDS`(60초)보다 자주 쓰지 않음(`ThrottledSessionRepository`) | 폴링(2~5초)마다 하던 UPDATE가 1분에 1번 |
+| 저장 시점·대상 | — | `FlushMode.ON_SAVE`(요청 끝에 한 번), `SaveMode.ON_SET_ATTRIBUTE`(값을 바꿀 때만) | 바뀐 것이 없으면 SQL 0개 |
+| 조회의 트랜잭션 | `BEGIN`(autocommit 끄기)·`SELECT`·`COMMIT`·autocommit 켜기 = 왕복 4번 | 조회는 트랜잭션 없이 `SELECT` 1문장(`SessionTransactions`). 쓰기만 트랜잭션(READ COMMITTED) | 왕복 4 → 1 |
+| 같은 요청 안의 재조회 | Spring Session 필터가 응답 커밋 때와 필터 끝에 두 번 커밋하면서 세션을 **다시 SELECT**(실측 요청당 2번) | 요청 단위 캐시(`SessionLookupCache`, 요청이 끝나면 버림) | SELECT 2 → 1 |
+
+대가: 유휴 만료가 최대 60초 일찍 올 수 있습니다(마지막 기록 시각 기준으로 30분). 세션 시각(`LAST_ACCESS_TIME`·`EXPIRY_TIME`)은 Spring Session이 **앱 서버 시계**로 씁니다. 서버 간 시계 차이(NTP 기준 수 ms~수 초)는 30분 유휴 만료에 비해 무시할 만해 DB 시계로 바꾸지 않았습니다(로그인 잠금처럼 짧고 보안에 직접 쓰이는 시각은 DB 시계, 아래).
+
+**만료 세션 정리 — 돌지 않아도 틀리지 않고, 여러 서버가 동시에 돌려도 안전**(`SessionCleanup`):
+- 정합성은 정리 작업에 기대지 않습니다. 만료된 세션은 읽을 때 Spring Session이 만료로 판단해 지우고 새 세션으로 처리합니다. 정리는 테이블이 커지지 않게 하는 청소입니다(Spring Session 자체 정리 작업은 끔).
+- 모든 서버가 `SESSION_CLEANUP_SECONDS`(5분)마다 돌립니다. 한 번에 500행씩 `SELECT … WHERE EXPIRY_TIME < (DB 시각) ORDER BY EXPIRY_TIME LIMIT 500 FOR UPDATE SKIP LOCKED` → 그 행만 `DELETE`. 다른 서버가 잡은 행은 건너뛰므로 **서로 기다리지 않고**, READ COMMITTED라 범위 잠금이 없어 정리 중에도 새 세션 `INSERT`가 막히지 않습니다. 잠금 순서는 세션 행 → 속성 행(CASCADE)으로 요청의 저장 순서와 같습니다. 같은 행을 두 번 지우려 해도 결과가 같습니다(멱등). 실측: 두 정리 작업을 동시에 시작 → 만료 1300행을 707/593으로 나눠 지움, 오류 0(통합 테스트 10번).
 
 **JWT와의 비교 — 왜 JWT가 아닌가**
 
-| | JWT(무상태 토큰) | Redis 세션 |
+| | JWT(무상태 토큰) | DB 세션 |
 |---|---|---|
-| 즉시 무효화(로그아웃·잠금·강제 만료) | 어렵다(만료까지 유효, 막으려면 결국 서버에 차단 목록 = 상태) | `DEL` 한 번 |
+| 즉시 무효화(로그아웃·잠금·강제 만료) | 어렵다(만료까지 유효, 막으려면 결국 서버에 차단 목록 = 상태) | `DELETE` 한 번 |
 | 브라우저 보관 | `localStorage`면 XSS에 노출, 쿠키면 결국 CSRF 대책 필요 | `HttpOnly` 쿠키(스크립트 접근 불가) |
 | 토큰 크기 | 요청마다 수백 바이트~수 KB | 세션 ID만 |
-| 서버 저장소 | 없음(이 점이 장점) | Redis 필요 — 이미 있음 |
+| 서버 저장소 | 없음(이 점이 장점) | MySQL(이미 있음). 요청당 SELECT 1번 |
 
-이 서비스는 이미 Redis가 필수이고 브라우저 하나가 같은 출처로만 부르므로, JWT의 장점(저장소 없음, 다른 서비스로 위임)이 거의 없고 단점(무효화·보관)만 남습니다.
+브라우저 하나가 같은 출처로만 부르는 서비스라 JWT의 장점(저장소 없음, 다른 서비스로 위임)이 거의 없고 단점(무효화·보관)만 남습니다. 요청당 SELECT 1번이 부담이 되면 토큰 방식으로 바꿀 수 있게 인증 확인을 `SessionAuth` 한 곳에 모아 두었습니다.
 
 **CSRF — 동기화 토큰 방식(`CsrfFilter`)**: 쿠키 인증은 브라우저가 쿠키를 자동으로 실어 보내므로, 다른 사이트가 사용자의 브라우저를 시켜 요청을 보낼 수 있습니다.
 - `GET`·`HEAD`(·CORS 사전요청 `OPTIONS`) 외 모든 `/api` 요청은 헤더 `X-CSRF-Token`이 **세션에 저장된 값과 같아야** 합니다(상수 시간 비교). 다르거나 없으면 `403 CSRF_INVALID`.
@@ -335,16 +388,46 @@ reservations (user_id ◄──────┼───────────�
 
 **비밀번호**: BCrypt **cost 12**(`spring-security-crypto`). 8~72자, 그리고 **72바이트 초과는 거부**합니다(BCrypt는 72바이트 뒤를 버리므로, 한글 25자 이상이면 앞 24자만 같아도 로그인되는 문제를 막음). 원문·해시는 로그와 응답에 남기지 않습니다.
 
-**로그인 실패**: "이메일 없음"과 "비밀번호 틀림"을 같은 `401 INVALID_CREDENTIALS`·같은 문구로, **없는 계정에도 더미 BCrypt 해시와 비교**해 응답 시간도 비슷하게 맞춥니다(가입 여부를 알아내는 계정 열거 방지). **계정당 연속 5회 실패 → 15분 잠금**(Redis `auth:fail:*`, 인스턴스가 여러 개여도 합산) → `429 ACCOUNT_LOCKED` + `Retry-After`. 잠긴 동안은 맞는 비밀번호도 거부, 성공하면 초기화. 없는 이메일에도 같은 잠금이 적용됩니다. IP 단위로는 strict 버킷(분당 30)이 따로 막습니다.
+**로그인 실패**: "이메일 없음"과 "비밀번호 틀림"을 같은 `401 INVALID_CREDENTIALS`·같은 문구로, **없는 계정에도 더미 BCrypt 해시와 비교**해 응답 시간도 비슷하게 맞춥니다(가입 여부를 알아내는 계정 열거 방지). **계정당 연속 5회 실패 → 15분 잠금** → `429 ACCOUNT_LOCKED` + `Retry-After`. 잠긴 동안은 맞는 비밀번호도 거부, 성공하면 초기화.
+next: 있는 계정의 잠금은 **`users.failed_login_count`·`failed_login_until`**(MySQL)에 있어 Redis를 비우거나 장애 전환해도 풀리지 않습니다. 실패 기록은 한 `UPDATE`로 원자적으로 하고(`기억 시각이 지났으면 1, 아니면 +1` + `기억 시각 = NOW(3) + 15분`, 같은 트랜잭션에서 다시 읽어 이번 횟수 확인), 잠금 판단은 로그인 때 어차피 읽는 사용자 행에서 DB 시계로 계산합니다(추가 쿼리 없음). 지난 기록을 지우는 작업은 없습니다(시각이 지나면 0으로 봄).
+**없는 이메일**에도 같은 잠금이 적용되어야 잠금 여부로 가입 여부를 알 수 없으므로, 없는 이메일의 횟수는 지금처럼 Redis(`auth:fail:{SHA-256(이메일)}`)에 셉니다. 지킬 계정이 없으니 "잃어도 되는 상태"이고, Redis가 죽어 있으면 세지 않고 401만 줍니다(로그인 기능은 Redis 없이 동작). IP 단위로는 strict 버킷(분당 30)이 따로 막습니다.
 
 **가입**: 이메일은 trim + 소문자로 정규화해 저장하고 `users.email`에 **유니크 제약**(`utf8mb4_bin`, 악센트를 같은 글자로 합치지 않게). 동시에 같은 이메일로 가입해도 DB가 하나만 받아들이고 나머지는 `409 EMAIL_TAKEN`. 가입과 동시에 로그인(세션 ID·CSRF 토큰 재발급).
 
 **왜 Spring Security 전체를 쓰지 않았나**: 필요한 것은 ① BCrypt ② 세션에서 사용자 id 확인 ③ CSRF 토큰 검증 세 가지뿐입니다. Spring Security 전체를 넣으면 기본 로그인 페이지·HTTP Basic·자체 오류 응답·자체 CSRF 저장소·필터 15개 안팎을 각각 끄거나 계약의 `ApiError` 형식·경로에 맞게 다시 설정해야 하고, 기존 필터(요청 ID·요청 제한·body 제한)와의 순서도 다시 맞춰야 합니다. 그래서 **BCrypt만 `spring-security-crypto`(검증된 구현)로 가져오고**, 세션·CSRF는 각각 50줄 남짓의 작은 클래스(`SessionAuth`, `CsrfFilter`)로 직접 만들어 테스트로 고정했습니다. 의존성 증가는 압축 기준 약 0.3MB입니다. 권한(역할)·OAuth·비밀번호 찾기 같은 기능이 생기면 그때 Spring Security로 옮기는 편이 맞습니다.
 
-### 5-3. 서버는 상태가 없다 — 대기열·선점은 Redis + Lua, 스케줄러 없음
-- 세션·대기열·선점·멱등키·로그인 실패 횟수는 전부 Redis에 있습니다. 서버 메모리에 사용자 상태가 없으므로 **복제본을 몇 개로 늘려도 동작이 같습니다**.
-- 만료 정리·승격 같은 "시간이 흐르며 바뀌는 상태"를 **주기 작업 없이**, 요청이 들어올 때 Lua 스크립트가 원자적으로 전진시킵니다. **왜?** 스케줄러는 복제본마다 돌면 중복 실행되고, 하나만 돌리려면 리더 선출이 필요합니다.
-- 시각은 Lua 안에서 **Redis `TIME`**을 씁니다 → 복제본마다 시계가 조금씩 달라도 만료 판단이 한 시계로 통일됩니다.
+### 5-3. 서버는 상태가 없다 — 상태는 "잃으면 안 되는 것"(MySQL)과 "잃어도 되는 것"(Redis)으로 나눈다
+
+| 상태 | 저장소 | Redis를 비우면(장애 전환·재시작) | Redis가 죽어 있으면 |
+|---|---|---|---|
+| 회원, 공연·회차, 좌석 판매 여부, 예매 | MySQL | 영향 없음(기준 데이터) | 영향 없음 |
+| **로그인 세션** | **MySQL** `SPRING_SESSION` | **유지**(다시 로그인할 필요 없음) | 로그인·가입·로그아웃·`/auth/me` 정상 |
+| **로그인 실패 잠금**(있는 계정) | **MySQL** `users.failed_login_*` | **유지**(잠금이 풀리지 않음) | 정상 |
+| 없는 이메일의 로그인 실패 횟수 | Redis `auth:fail:*` | 0부터 다시 셈(지킬 계정이 없음) | 세지 않고 401만(로그인 기능은 정상) |
+| 접속 대기열(대기·입장) | Redis | 사라짐 → 상태 조회 `401 QUEUE_TOKEN_INVALID` → **다시 줄 서기** | 진입·상태·이탈 `503 SERVICE_UNAVAILABLE` |
+| 좌석 임시 선점 | Redis | 사라짐 → 확정 `409 HOLD_EXPIRED` → **다시 좌석 고르기**. 판매된 좌석은 DB라 영향 없음 | 좌석 조회·선점·해제 `503` |
+| 멱등키 | Redis | 사라짐. 선점도 함께 사라지므로 재전송은 `409 HOLD_EXPIRED` → **중복 예매 없음** | 확정 `503` |
+| 요청 제한 카운터 | Redis | 한도가 0부터 다시 | **제한 없이 통과**(fail-open, 3초마다 다시 시도) |
+
+- 서버 메모리에 사용자 상태가 없으므로 **복제본을 몇 개로 늘려도 동작이 같습니다**(요청 단위 세션 캐시는 요청이 끝나면 버림. `RedisBackoff`는 "Redis가 방금 실패했다"는 서버 상태일 뿐 사용자 상태가 아님).
+- 대기열·선점의 "시간이 흐르며 바뀌는 상태"(만료 정리·승격)는 **주기 작업 없이**, 요청이 들어올 때 Lua 스크립트가 원자적으로 전진시킵니다. 시각은 Lua 안의 **Redis `TIME`**(Redis 하나의 시계). 로그인 잠금은 **MySQL `NOW(3)`**(DB 하나의 시계)로 판단합니다.
+- 주기 작업은 만료 세션 청소(`SessionCleanup`) 하나이고, 돌지 않아도 결과가 틀리지 않습니다(5-2).
+
+### 5-3-1. 요청별 DB 왕복 수와 쓰는 인덱스 (실측: performance_schema로 서버가 받은 문장을 셈)
+
+| 경로 | 빈도 | MySQL 문장 | 쓰는 인덱스 | Redis |
+|---|---|---|---|---|
+| 모든 로그인 요청의 세션 확인 | 요청마다 | `SELECT` 세션 ⟕ 속성 **1번** (+ 60초에 1번 `UPDATE SPRING_SESSION` by PK) | `SPRING_SESSION_IX1(SESSION_ID)` 유니크 → PK `SPRING_SESSION_ATTRIBUTES(SESSION_PRIMARY_ID, …)` 접두 | — |
+| 쿠키 없는 요청(둘러보기 첫 방문) | | 0번(세션을 찾지 않음) | | |
+| `GET /api/queue/status`(대기 화면 폴링 2~5초) | 폴링 | **1번**(세션만. 통합 테스트로 고정) | 위와 같음 | Lua 1번 + 토큰 소유 확인 HMGET 1번 |
+| `GET /api/performances/:id/seats`(좌석 화면 폴링 3~5초) | 폴링 | **4번**: 세션, 회차+공연, 좌석 전체, 등급 | IX1 / PK / `uk_seats_position(performance_id, …)` / PK `grades(show_id, code)` | 토큰 확인 2번 + 선점 MGET 1번 + 내 선점 1~2번 |
+| `GET /api/auth/me` | 화면 진입 | 2번: 세션, 사용자 | IX1 / PK `users` | — |
+| `GET /api/me/reservations` | | 2~3번: 세션, 예매, (예매가 있으면) 좌석 | IX1 / `idx_reservations_user_created` / PK `reservation_seats` | — |
+| `POST /api/auth/login` | | 세션, 사용자(잠금 열 포함 1번), 성공 시 세션 ID 변경 `UPDATE` + 속성 `INSERT`/`UPDATE`(트랜잭션 1개). 실패 시 `UPDATE users` + `SELECT`(트랜잭션 1개) | IX1 / `uk_users_email` / PK | 없는 이메일만 `GET`·Lua 1번씩 |
+| `POST /api/auth/logout` | | 세션, `DELETE SPRING_SESSION`(속성 CASCADE) | IX1 / PK | — |
+| 만료 세션 정리 | 5분마다 × 서버 수 | 500행 배치마다 `SELECT … FOR UPDATE SKIP LOCKED` + `DELETE` | `SPRING_SESSION_IX2(EXPIRY_TIME)` 범위 + PK | — |
+
+v3(세션 = Redis)와 비교하면, 로그인한 요청마다 **MySQL SELECT 1번이 늘었습니다**(대신 Redis 세션 조회가 빠짐). 대기 화면 폴링은 v3에서 MySQL 0번이었던 것이 1번이 됩니다. 부하는 폴링 간격(`pollAfterSeconds` 2~5초)으로 조절하고, 세션 조회는 유니크 인덱스 한 번 + 속성 2행이라 가볍습니다.
 
 ### 5-4. 접속 대기열 (회차 단위)
 
@@ -385,7 +468,7 @@ POST /performances/:id/holds
 ```
 POST /reservations (로그인, X-CSRF-Token, X-Queue-Token, Idempotency-Key, body { holdId })
  ├─ ① 멱등키 확인(먼저!) — 키는 "사용자:키"로 나눈다. 이미 완료된 키 → 처음 201 응답 그대로
- ├─ ② 내 토큰 + ADMITTED → hold가 내 토큰·내 계정·같은 회차인지 → 판매 기간 → 계정에서 이름·이메일
+ ├─ ② hold가 있는지(없으면 409 HOLD_EXPIRED, next) → 내 토큰 + ADMITTED → hold가 내 토큰·내 계정·같은 회차인지 → 판매 기간 → 계정에서 이름·이메일
  ├─ ③ MySQL 트랜잭션(READ COMMITTED)
  │      SELECT … FROM users WHERE id = 나 FOR UPDATE   ← 같은 사용자의 확정을 한 줄로 세움
  │      이 회차의 내 확정 좌석 수 + 이번 좌석 수 > 4 → 롤백 → 409 BOOKING_LIMIT_EXCEEDED
@@ -409,8 +492,8 @@ POST /reservations (로그인, X-CSRF-Token, X-Queue-Token, Idempotency-Key, bod
 ### 5-8. 보안
 | 요구 | 구현 |
 |---|---|
-| 인증 | 세션(Redis) + BCrypt cost 12, 8~72자·72바이트 이하. 실패 응답·시간 구분 없음(더미 해시), 계정당 5회 → 15분 잠금 |
-| 세션 | 쿠키 `HttpOnly; SameSite=Lax; Path=/`(+운영 `Secure`), URL 미사용, 로그인 시 ID 재발급, 로그아웃 시 Redis에서 삭제, 유휴 30분 |
+| 인증 | 세션(MySQL) + BCrypt cost 12, 8~72자·72바이트 이하. 실패 응답·시간 구분 없음(더미 해시), 계정당 5회 → 15분 잠금(`users` 열, DB 시계) |
+| 세션 | 쿠키 `HttpOnly; SameSite=Lax; Path=/`(+운영 `Secure`), URL 미사용, 로그인 시 ID 재발급, 로그아웃 시 세션 행 삭제, 유휴 30분, 인증 확인은 `SessionAuth` 한 곳(`@CurrentUser`) |
 | CSRF | 동기화 토큰 + 상수 시간 비교, 익명 세션에도 발급, 로그인 시 재발급 → `403 CSRF_INVALID` |
 | 인가 | 예매 흐름 전체 로그인 필수(`401 UNAUTHENTICATED`). 토큰·선점·멱등키·예매가 사용자에게 묶임. 남의 예매는 같은 404 |
 | 입력 검증 | Bean Validation(한국어 메시지) + Jackson `FAIL_ON_UNKNOWN_PROPERTIES`, 중복 키 거부, 타입 강제 변환 금지. `GET /shows`는 정의되지 않은 쿼리 파라미터도 거부, 검색어 40자. 오류 `details`에 필드별 메시지 |
@@ -421,16 +504,32 @@ POST /reservations (로그인, X-CSRF-Token, X-Queue-Token, Idempotency-Key, bod
 | 개인정보 | 예매 테이블에 이메일 원문 없음(해시 + 마스킹), 응답은 `ab***@example.com`. 이메일 원문은 로그인용 `users`에만. 로그에 이름·이메일·비밀번호·해시·세션 ID·CSRF 토큰·대기열 토큰·IP 없음(통합 테스트 로그로 확인) |
 | 오류 응답 | 모든 오류를 `ApiError` 형태로. 5xx는 고정 문구 + `requestId` |
 | 보안 헤더 | `nosniff`, `Cache-Control: no-store`, `X-Frame-Options: DENY`, `CSP: default-src 'none'; frame-ancestors 'none'`, `Referrer-Policy: no-referrer` |
-| 요청 제한 | Redis 고정 창(1분), IP당 3개 버킷: general 120 / strict 30 / poll 240. 신뢰하는 사설 대역 프록시가 붙인 `X-Forwarded-For`만 반영 |
-| DB 권한 | 서버는 `SELECT/INSERT/UPDATE`만, DDL은 migrate용 소유자 계정 |
+| 요청 제한 | Redis 고정 창(1분), IP당 3개 버킷: general 120 / strict 30 / poll 240. 신뢰하는 사설 대역 프록시가 붙인 `X-Forwarded-For`만 반영. Redis 장애 때는 통과(fail-open, 5-10) |
+| DB 권한 | 서버는 `SELECT/INSERT/UPDATE/DELETE`만(next: DELETE는 세션 행 삭제용. 앱 코드의 `DELETE`는 세션 테이블뿐), DDL은 migrate용 소유자 계정 |
 | 저작권 | 시드의 공연명·출연진·장소는 모두 지어낸 것. 포스터는 `{seed, hue}` 값만 |
-| 의존성 | Spring Boot BOM. starter 4개 + Spring Session Data Redis + spring-security-crypto + Flyway + MySQL 드라이버. Actuator·Spring Security 전체 미사용 |
+| 의존성 | Spring Boot BOM. starter 4개 + Spring Session JDBC(next) + spring-security-crypto + Flyway + MySQL 드라이버. Actuator·Spring Security 전체 미사용 |
 
 ### 5-9. 프로브와 종료, 마이그레이션 분리
-- `/healthz`: 프로세스 생존만. `/readyz`: MySQL `SELECT 1` + Redis `PING` + 종료 중 아님. 프로브는 세션을 만들지 않습니다.
-- `server.shutdown=graceful`: SIGTERM에 새 연결을 거절하고 진행 중 요청을 끝낸 뒤(최대 20초) 종료. 세션은 Redis에 있어 파드 교체로 로그아웃되지 않습니다.
+- `/healthz`: 프로세스 생존만. `/readyz`: **MySQL `SELECT 1` + 종료 중 아님**으로 판단(200 `{"status":"ready","redis":"up"|"down"}` / 503 `{"status":"unavailable","redis":…}`). next: Redis는 판단에 넣지 않습니다 — Redis가 죽었다고 파드가 트래픽에서 빠지면 Redis 없이 되는 둘러보기·로그인·내 예매까지 함께 죽기 때문입니다. `redis` 항목은 참고용이고, 상태가 바뀔 때만 로그(WARN/INFO)를 남깁니다. 프로브는 세션을 만들지 않습니다.
+- `server.shutdown=graceful`: SIGTERM에 새 연결을 거절하고 진행 중 요청을 끝낸 뒤(최대 20초) 종료. 세션은 MySQL에 있어 파드 교체로 로그아웃되지 않습니다.
 - 서버는 Flyway를 돌리지 않습니다(복제본 경쟁 방지, 서버 계정에 DDL 권한 불필요). **v3부터 스키마 변경은 새 버전 파일로 쌓습니다**(`V1` → `V2`).
 - 로그: Spring Boot 구조화 로깅(ECS JSON) 한 줄씩 stdout, 모든 줄에 `requestId`.
+
+
+### 5-10. Redis가 비거나 죽었을 때 (next)
+
+Redis는 **언제든 비어 있을 수 있다**는 전제로 만들었습니다(멀티 클라우드 DR에서는 다른 클라우드의 빈 Redis로 넘어감). 통합 테스트 8·9번이 이 표를 실제 MySQL·Redis로 확인합니다.
+
+| 상황 | 둘러보기(목록·상세) | 가입·로그인·로그아웃·`/auth/me` | 내 예매 조회·취소 | 대기열 | 좌석 조회·선점 | 예매 확정 | `/readyz` |
+|---|---|---|---|---|---|---|---|
+| Redis가 **비었다**(FLUSHALL, 재시작, 장애 전환) | 정상 | 정상, **로그인 유지**, 잠금 유지 | 정상 | 대기자: `401 QUEUE_TOKEN_INVALID` → 다시 진입하면 정상 | 옛 토큰 `401` → 다시 줄 서기. 팔린 좌석은 `409 SEAT_TAKEN` | 선점 중이던 사람: **`409 HOLD_EXPIRED`** → 좌석 다시 고르기. 중복 판매 없음(DB) | 200 |
+| Redis가 **죽었다**(연결 거부) | 정상 | 정상(없는 이메일 실패 횟수만 세지 못함) | 정상 | **`503 SERVICE_UNAVAILABLE`** + `Retry-After: 5` | `503` | `503`(멱등 확인이 먼저라 아무것도 쓰지 않음) | 200, `redis: "down"` |
+| Redis가 **돌아왔다** | 정상 | 정상 | 정상 | 서버 재시작 없이 정상(빈 상태부터). 실측: 다시 켠 뒤 첫 시도부터 200 | 정상 | 정상 | 200, `redis: "up"` |
+
+- **503 응답**: `{"error":{"code":"SERVICE_UNAVAILABLE","message":"예매 진행이 잠시 원활하지 않습니다. 잠시 후 다시 시도해 주세요.","requestId":…}}`. 스택·주소·예외 이름은 응답에 없고, 서버 로그에 한 줄(WARN, 예외 클래스 이름만)을 남깁니다. **계약 4.2에 없는 코드라 제안으로 보고**합니다.
+- **오래 매달리지 않게**(`config/RedisClientConfig`): 명령·연결 시간 초과 `REDIS_TIMEOUT_MS`(500ms), 연결이 끊긴 동안의 명령은 쌓지 않고 **즉시 거절**(Lettuce `REJECT_COMMANDS`, 실측 503까지 8ms), 자동 재연결 간격 100ms~2초. 요청 제한과 없는 이메일의 로그인 실패 횟수는 한 번 실패하면 3초 동안 Redis를 부르지 않습니다(`RedisBackoff`).
+- **확정 순서를 바꾼 이유**: v3는 토큰 확인이 먼저라 Redis가 비면 확정이 `401 QUEUE_TOKEN_INVALID`였습니다. 선점이 없으면 먼저 `409 HOLD_EXPIRED`로 답하게 바꿔, 화면이 "좌석 확보가 풀렸습니다 → 좌석 화면"으로 가고, 좌석 조회가 401을 받으면 그때 다시 줄을 서게 했습니다. 선점이 있으면 지금까지처럼 토큰을 확인합니다(남의 토큰 401, 대기 중 403).
+- **중복 판매가 없는 이유**: 판매의 기준은 Redis가 아니라 MySQL `seats.status`이고, 확정은 `UPDATE … WHERE status='AVAILABLE'`의 영향 행 수로 검증합니다. Redis가 틀려 같은 좌석에 선점이 두 개 생겨도(테스트: 옛 선점을 덤프에서 복원) 두 번째 확정은 `409 SEAT_TAKEN`입니다.
 
 ---
 
@@ -472,6 +571,9 @@ v3에서 Spring Session·spring-security-crypto가 늘었지만 의존성 레이
 
 ## 7. 프론트엔드가 알아둘 동작
 
+- **next: 프론트 수정은 필요 없습니다**(계약 v3 그대로). 다만 다음 두 가지가 새로 나올 수 있습니다.
+  - `503 SERVICE_UNAVAILABLE`(+ `Retry-After: 5`): Redis 장애로 예매 진행(대기열·좌석·선점·확정)만 잠시 안 될 때. 지금 화면은 5xx를 "다시 시도할 수 있는 오류"로 보여 주므로 그대로 동작합니다. 둘러보기·로그인·내 예매는 영향이 없습니다.
+  - 장애 전환·Redis 재시작 직후 확정은 `409 HOLD_EXPIRED`(좌석 화면으로), 대기·좌석 화면은 `401 QUEUE_TOKEN_INVALID`(다시 줄 서기)가 됩니다. 로그인은 유지됩니다.
 - **세션 쿠키** `TKT_SESSION`(HttpOnly라 JS에서 안 보임). 같은 출처(`/api`)로 부르면 브라우저가 알아서 보냅니다. `fetch`는 기본값(`credentials: "same-origin"`)이면 됩니다.
 - **CSRF 토큰(`csrfToken`)이 바뀌는 시점**: ① 앱 시작 시 `GET /api/auth/me`로 받음(익명이어도 줌) ② **가입·로그인 성공 응답에 새 토큰** → 반드시 교체 ③ **로그아웃 후**에는 세션이 사라지므로 `GET /api/auth/me`를 다시 불러 새 토큰을 받아야 함 ④ 세션 만료 후에도 같음. `GET`·`HEAD` 외 모든 `/api` 요청에 `X-CSRF-Token` 헤더(로그아웃·대기열 이탈·선점 해제·취소 포함).
 - **세션 만료(유휴 30분) 시 응답**: 로그인 필요한 `GET`(내 예매·좌석 조회·대기 상태)은 **`401 UNAUTHENTICATED`**, 상태 변경 요청은 세션이 없어 토큰 비교가 먼저 실패하므로 **`403 CSRF_INVALID`**. 두 경우 모두 `GET /api/auth/me` → `user: null`이면 로그인 화면으로 보내면 됩니다(`csrfToken`도 새로 받음).
@@ -500,9 +602,14 @@ v3에서 Spring Session·spring-security-crypto가 늘었지만 의존성 레이
 
 - Flyway 11.7(Spring Boot 3.5 BOM 고정)이 MySQL 8.4에 대해 "upgrade recommended" 경고를 남깁니다. 마이그레이션은 정상 적용됩니다.
 - Lua 스크립트는 여러 키를 함께 다루므로 **Redis Cluster 모드에서는 동작하지 않습니다**. ElastiCache는 클러스터 모드 비활성으로 쓰세요.
-- 세션 값은 Spring Session 기본(JDK 직렬화)으로 저장됩니다. 넣는 값이 `Long`·`String` 둘뿐이라 문제는 없지만, Redis에 쓰기 권한을 가진 쪽은 신뢰 범위 안에 있어야 합니다(Redis 비밀번호·네트워크 정책 필수).
+- 세션 값은 Spring Session 기본(JDK 직렬화 BLOB)으로 저장됩니다. 넣는 값이 `Long`·`String` 둘뿐이라 문제는 없지만, 세션 테이블에 쓰기 권한을 가진 쪽은 신뢰 범위 안에 있어야 합니다(앱 계정만 쓰기).
+- next: 로그인한 요청마다 MySQL `SELECT` 1번이 듭니다(v3는 Redis). 대기 화면 폴링도 MySQL을 1번 씁니다. 동시 접속이 크게 늘면 MySQL 읽기 부하가 먼저 늘어나므로, 폴링 간격·읽기 복제본·토큰 방식 전환(인증 확인이 `SessionAuth` 한 곳이라 가능)을 검토합니다.
+- next: 세션 유휴 만료는 마지막 접근 기록 간격(60초)만큼 일찍 올 수 있고, 세션 시각은 앱 서버 시계로 씁니다(로그인 잠금은 DB 시계).
+- next: 서버 DB 계정에 `DELETE`가 필요합니다. 테이블 단위로만 주려면(`GRANT DELETE ON ticketing.SPRING_SESSION …`) 테이블이 생긴 뒤(migrate 뒤) 관리자가 따로 실행해야 해서, 지금은 DB 단위로 줍니다.
+- next: 장애 전환 때 MySQL 복제 지연만큼의 최근 세션(그 사이 로그인·세션 ID 재발급)은 없을 수 있습니다 → 그 사용자만 다시 로그인.
 - 쿠키 이름에 `__Host-` 접두사(도메인·경로 고정 강제)를 쓰지 않았습니다. 로컬 http에서는 `Secure` 없이 쓸 수 없기 때문입니다. 운영 https만 있다면 `__Host-TKT_SESSION`으로 바꾸는 것을 고려하세요.
 - 로그인 잠금은 계정 단위라, 남의 이메일로 일부러 5번 틀려 15분 동안 잠그는 방해가 가능합니다(IP당 strict 30/분으로 완화). 더 강하게 하려면 IP+계정 조합이나 CAPTCHA가 필요합니다.
 - 목록·상세는 요청마다 전체 좌석을 집계합니다(시드 기준 약 6,100석, 수 ms).
-- 요청 제한은 고정 창이라 창 경계에서 순간적으로 최대 2배까지 허용될 수 있습니다. Redis 장애 시에는 제한을 건너뜁니다(fail-open). Redis가 죽으면 로그인·대기열·선점도 동작하지 않으므로 `/readyz`가 503이 됩니다.
+- 요청 제한은 고정 창이라 창 경계에서 순간적으로 최대 2배까지 허용될 수 있습니다. Redis 장애 시에는 제한을 건너뜁니다(fail-open) → 그동안은 IP당 한도가 없으므로 앞단(로드밸런서·WAF)의 한도가 유일한 보호입니다. 예매 진행은 그동안 503이라 좌석 독점은 생기지 않습니다.
+- next: Redis 주소가 응답 없이 막힌 경우(패킷 유실) 예매 진행 요청은 `REDIS_TIMEOUT_MS`(500ms)까지 기다린 뒤 503입니다. 요청 제한·없는 이메일 로그인은 한 번 실패하면 3초 동안 Redis를 부르지 않습니다. 이 경우는 통합 테스트로 재현하지 않았습니다(테스트는 Redis 프로세스를 끄는 경우).
 - `DB_SSL_MODE=PREFERRED`는 암호화하되 인증서를 검증하지 않습니다. RDS에서 `VERIFY_IDENTITY`를 쓰려면 RDS CA를 트러스트스토어에 넣어야 합니다.
