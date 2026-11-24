@@ -4,13 +4,15 @@
 #
 # 계정 분리(최소 권한):
 #   ticketing      : 스키마 소유자. MYSQL_USER 로 이미 만들어진다. migrate 모드(Flyway DDL)에서만 사용
-#   ticketing_app  : API 서버용. SELECT/INSERT/UPDATE만 (DROP·ALTER·DELETE 불가)
+#   ticketing_app  : API 서버용. SELECT/INSERT/UPDATE/DELETE만 (DROP·ALTER 등 DDL 불가)
+#                    next: DELETE는 로그인 세션(SPRING_SESSION) 삭제(로그아웃·만료 정리)에 필요하다.
+#                    앱 코드에서 DELETE를 쓰는 곳은 세션 테이블뿐이다(예매·좌석은 상태 변경 UPDATE만).
 set -euo pipefail
 : "${DB_APP_PASSWORD:?DB_APP_PASSWORD 가 필요합니다}"
 
 mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" <<SQL
 CREATE USER IF NOT EXISTS 'ticketing_app'@'%' IDENTIFIED BY '${DB_APP_PASSWORD}';
-GRANT SELECT, INSERT, UPDATE ON ticketing.* TO 'ticketing_app'@'%';
+GRANT SELECT, INSERT, UPDATE, DELETE ON ticketing.* TO 'ticketing_app'@'%';
 
 -- 통합 테스트 전용 DB(개발 데이터와 섞이지 않게). 테스트는 Flyway를 직접 돌리므로 소유자 계정에 권한을 준다.
 CREATE DATABASE IF NOT EXISTS ticketing_test CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;

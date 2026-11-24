@@ -5,7 +5,8 @@
 #
 # 계정 분리(최소 권한):
 #   ticketing      : 스키마 소유자. 마이그레이션(테이블 생성·변경)에만 사용
-#   ticketing_app  : API 서버용. 조회·추가·수정만 가능(테이블 삭제·변경 불가)
+#   ticketing_app  : API 서버용. 조회·추가·수정·행 삭제만 가능(테이블 삭제·변경 불가)
+#                    행 삭제(DELETE)는 로그인 세션 테이블의 로그아웃·만료 정리에 쓴다(next)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -23,7 +24,7 @@ GRANT ALL PRIVILEGES ON ticketing.* TO 'ticketing'@'localhost';
 
 CREATE USER IF NOT EXISTS 'ticketing_app'@'localhost' IDENTIFIED BY '${DB_APP_PASSWORD}';
 ALTER USER 'ticketing_app'@'localhost' IDENTIFIED BY '${DB_APP_PASSWORD}';
-GRANT SELECT, INSERT, UPDATE ON ticketing.* TO 'ticketing_app'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON ticketing.* TO 'ticketing_app'@'localhost';
 
 FLUSH PRIVILEGES;
 SQL
