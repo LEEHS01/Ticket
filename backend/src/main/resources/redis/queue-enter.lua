@@ -1,12 +1,13 @@
 -- 대기열 진입
 -- KEYS: 1 waiting(ZSET 순번) 2 seen(ZSET 마지막 폴링 ms) 3 active(ZSET 입장 만료 ms) 4 seq(카운터) 5 token(HASH)
---       6 user(STRING: 이 사용자가 이 회차에서 가진 tokenId)
+--       6 user(STRING: 이 사용자가 이 회차에서 가진 tokenId) 7 tick 8 grace(장애 유예, queue-common.lua)
 -- ARGV: 1 maxActive 2 admitMs 3 waitTtlMs 4 tokenId 5 performanceId 6 tokenTtlMs 7 userId
 -- 반환: {1, 0, admittedUntilMs} = ADMITTED, {0, position, 0} = WAITING
 local now = now_ms()
 local max_active = tonumber(ARGV[1])
 local admit_ms = tonumber(ARGV[2])
-advance(KEYS[1], KEYS[2], KEYS[3], now, max_active, admit_ms, tonumber(ARGV[3]))
+local wait_ttl_ms = tonumber(ARGV[3])
+advance(KEYS[1], KEYS[2], KEYS[3], now, max_active, admit_ms, wait_ttl_ms, in_grace(KEYS[7], KEYS[8], now, wait_ttl_ms))
 
 -- 토큰은 발급받은 사용자에게 묶인다(v3)
 redis.call('HSET', KEYS[5], 'perf', ARGV[5], 'uid', ARGV[7])

@@ -22,6 +22,16 @@ public final class RedisKeys {
         return "queue:" + performanceId + ":seq";
     }
 
+    /** STRING Redis 시각(ms) — 이 회차의 대기열 스크립트가 마지막으로 돈 시각. 이 간격이 길면 Redis가 멈춰 있었다고 본다. */
+    public static String queueTick(long performanceId) {
+        return "queue:" + performanceId + ":tick";
+    }
+
+    /** STRING(TTL = 대기 TTL) — 있으면 "장애 뒤 유예 중": 폴링 끊김으로 대기자를 빼지 않는다. */
+    public static String queueGrace(long performanceId) {
+        return "queue:" + performanceId + ":grace";
+    }
+
     /** STRING tokenId — 이 사용자가 이 회차에서 가진 대기열 토큰(한 사용자 = 회차당 토큰 1개). */
     public static String userToken(long performanceId, long userId) {
         return "queue:" + performanceId + ":user:" + userId;

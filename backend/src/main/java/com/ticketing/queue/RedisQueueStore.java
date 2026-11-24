@@ -41,7 +41,8 @@ public class RedisQueueStore implements QueueStore {
         List<?> r = redis.execute(ENTER,
                 List.of(RedisKeys.waiting(performanceId), RedisKeys.seen(performanceId),
                         RedisKeys.active(performanceId), RedisKeys.seq(performanceId), RedisKeys.token(tokenId),
-                        RedisKeys.userToken(performanceId, userId)),
+                        RedisKeys.userToken(performanceId, userId), RedisKeys.queueTick(performanceId),
+                        RedisKeys.queueGrace(performanceId)),
                 String.valueOf(s.maxActive()), String.valueOf(s.admit().toMillis()),
                 String.valueOf(s.waitTtl().toMillis()), tokenId, String.valueOf(performanceId), tokenTtlMs(s),
                 String.valueOf(userId));
@@ -62,7 +63,7 @@ public class RedisQueueStore implements QueueStore {
         long perf = o.performanceId();
         List<?> r = redis.execute(POLL,
                 List.of(RedisKeys.waiting(perf), RedisKeys.seen(perf), RedisKeys.active(perf), RedisKeys.token(tokenId),
-                        RedisKeys.userToken(perf, o.userId())),
+                        RedisKeys.userToken(perf, o.userId()), RedisKeys.queueTick(perf), RedisKeys.queueGrace(perf)),
                 String.valueOf(s.maxActive()), String.valueOf(s.admit().toMillis()),
                 String.valueOf(s.waitTtl().toMillis()), tokenId, tokenTtlMs(s));
         return toState(o, r);
@@ -88,7 +89,7 @@ public class RedisQueueStore implements QueueStore {
         long perf = o.performanceId();
         redis.execute(LEAVE,
                 List.of(RedisKeys.waiting(perf), RedisKeys.seen(perf), RedisKeys.active(perf), RedisKeys.token(tokenId),
-                        RedisKeys.userToken(perf, o.userId())),
+                        RedisKeys.userToken(perf, o.userId()), RedisKeys.queueTick(perf), RedisKeys.queueGrace(perf)),
                 String.valueOf(s.maxActive()), String.valueOf(s.admit().toMillis()),
                 String.valueOf(s.waitTtl().toMillis()), tokenId);
     }
