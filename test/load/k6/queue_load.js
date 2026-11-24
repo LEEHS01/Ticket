@@ -12,9 +12,11 @@
 //   BOOKERS        동시에 예매 흐름을 도는 가상 사용자 수. 기본 2
 //   POLL_SECONDS   대기 폴링 간격(초). 0이면 서버가 준 pollAfterSeconds를 따른다(권장). 기본 0
 //   BASELINE_SECONDS  대기 트래픽 없이 예매만 도는 기준선 시간(초). 기본 30
-//   EMAIL_PREFIX   가상 사용자 이메일 앞부분. 기본 "k6"
-// 서버는 요청 제한을 충분히 올려 띄운다(RATE_LIMIT_*_PER_MINUTE). 운영 기본값은 바꾸지 않는다.
+//   EMAIL_PREFIX   (ACCOUNTS_FILE이 없을 때) 새로 가입할 이메일 앞부분. 기본 "k6"
+//   ACCOUNTS_FILE  미리 만든 계정 파일(한 줄에 "이메일,비밀번호"). k6/prepare_accounts.sh로 만든다. 있으면 가입 대신 로그인
+// 서버는 요청 제한을 테스트용으로 올려 띄운다(test/load/README.md 3장). 운영 기본값은 바꾸지 않는다.
 // 결과: k6 요약의 http_req_duration{flow:...} — book_seats·book_hold·book_confirm·book_cancel·queue_status, 오류율 checks.
+//       파일로 남기려면 --summary-export=<파일.json>(요약) 또는 --out json=<파일.json>(요청마다).
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Trend, Counter } from 'k6/metrics';
@@ -66,16 +68,29 @@ function uuidv4() {
   return `${s.slice(0, 8)}-${s.slice(8, 12)}-${s.slice(12, 16)}-${s.slice(16, 20)}-${s.slice(20)}`;
 }
 
-// 가상 사용자마다 한 번 가입(같은 VU 안에서는 쿠키가 유지된다). CSRF 토큰은 응답 body로 받는다.
+// 테스트 계정: ACCOUNTS_FILE(한 줄에 "이메일,비밀번호", prepare_accounts.sh가 만든다)이 있으면 VU마다 한 줄씩 골라 로그인,
+// 없으면 VU마다 새로 가입한다. 계정 파일을 쓰면 가입이 측정 구간에 섞이지 않고, 같은 계정으로 여러 번 다시 돌릴 수 있다.
+const ACCOUNTS = __ENV.ACCOUNTS_FILE
+  ? open(__ENV.ACCOUNTS_FILE).split('\n').map((l) => l.trim()).filter(Boolean).map((l) => l.split(','))
+  : null;
+
+// 가상 사용자마다 한 번 로그인(같은 VU 안에서는 쿠키가 유지된다). CSRF 토큰은 응답 body로 받는다.
 const state = {};
 function login() {
   if (state.csrf) return state.csrf;
   const me = http.get(`${BASE}/api/auth/me`, { tags: { flow: 'auth' } });
-  const email = `${PREFIX}-${exec.vu.idInTest}-${Date.now()}@example.com`;
-  const r = http.post(`${BASE}/api/auth/signup`, JSON.stringify({ email, password: 'password-123', name: '부하' }), {
-    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': me.json('csrfToken') }, tags: { flow: 'auth' },
-  });
-  check(r, { 'signup 201': (x) => x.status === 201 });
+  const headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': me.json('csrfToken') };
+  let r;
+  if (ACCOUNTS) {
+    const [email, password] = ACCOUNTS[(exec.vu.idInTest - 1) % ACCOUNTS.length];
+    r = http.post(`${BASE}/api/auth/login`, JSON.stringify({ email, password }), { headers, tags: { flow: 'auth' } });
+    check(r, { 'login 200': (x) => x.status === 200 });
+  } else {
+    const email = `${PREFIX}-${exec.vu.idInTest}-${Date.now()}@example.com`;
+    r = http.post(`${BASE}/api/auth/signup`, JSON.stringify({ email, password: 'password-123', name: '부하' }),
+      { headers, tags: { flow: 'auth' } });
+    check(r, { 'signup 201': (x) => x.status === 201 });
+  }
   state.csrf = r.json('csrfToken');
   return state.csrf;
 }
