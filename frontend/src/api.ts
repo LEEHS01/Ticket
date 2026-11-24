@@ -1,4 +1,6 @@
-// API 호출은 전부 이 모듈을 거친다. 자료형은 docs/ARCHITECTURE.md (v2) 4장 계약과 1:1로 맞춘다.
+// API 호출은 전부 이 모듈을 거친다.
+// 자료형은 docs/ARCHITECTURE.md 4장(v3)과 docs/next/API-v4.md(v4 추가·변경)에 1:1로 맞춘다.
+// v3 백엔드에 붙어도 화면이 깨지지 않도록, v4에서 생긴 필드가 응답에 없으면 여기서 기본값을 채운다(normalize*).
 
 export type Genre = 'CONCERT' | 'MUSICAL' | 'PLAY' | 'CLASSIC';
 export type SaleStatus = 'UPCOMING' | 'ON_SALE' | 'SOLD_OUT' | 'CLOSED';
@@ -21,6 +23,13 @@ export type ShowSummary = {
   totalSeats: number;
   rank: number | null;
   poster: Poster;
+  // v4
+  /** 한 줄 소개(30자 이내). v3 응답이면 '' */
+  tagline: string;
+  /** 공연장 지역. v3 응답이면 '' */
+  region: string;
+  /** 공연 등록 시각. v3 응답이면 saleOpensAt */
+  createdAt: string;
 };
 
 export type PerformanceSummary = {
@@ -29,6 +38,8 @@ export type PerformanceSummary = {
   status: SaleStatus;
   remainingByGrade: { grade: string; remaining: number; total: number }[];
 };
+
+export type VenueInfo = { name: string; region: string; seatCount: number };
 
 export type ShowDetail = ShowSummary & {
   ageRating: string;
@@ -39,6 +50,8 @@ export type ShowDetail = ShowSummary & {
   maxSeatsPerBooking: number;
   grades: Grade[];
   performances: PerformanceSummary[];
+  // v4. v3 응답이면 이름은 venue, 지역은 '', 좌석 수는 회차 하나의 등급별 좌석 합으로 채운다
+  venueInfo: VenueInfo;
 };
 
 export type QueueState = {
@@ -55,8 +68,10 @@ export type Seat = { id: number; row: string; number: number; grade: string; sta
 
 export type Hold = { holdId: string; seatIds: number[]; totalPrice: number; expiresAt: string };
 
+export type PerformanceInfo = { id: number; showId: number; showTitle: string; venue: string; startsAt: string };
+
 export type SeatMap = {
-  performance: { id: number; showId: number; showTitle: string; venue: string; startsAt: string };
+  performance: PerformanceInfo;
   grades: Grade[];
   rows: string[];
   seatsPerRow: number;
@@ -64,6 +79,18 @@ export type SeatMap = {
   seats: Seat[];
   myHold: Hold | null;
 };
+
+// v4: 좌석 상태가 없는 배치 정보(상세 화면 미리보기)
+export type SeatLayout = {
+  performance: PerformanceInfo;
+  grades: Grade[];
+  rows: string[];
+  seatsPerRow: number;
+  aisleAfter: number[];
+  seats: { row: string; number: number; grade: string }[];
+};
+
+export type PaymentMethod = 'CARD' | 'EASY_PAY' | 'BANK_TRANSFER';
 
 export type Reservation = {
   code: string;
@@ -76,7 +103,37 @@ export type Reservation = {
   status: 'CONFIRMED' | 'CANCELLED';
   createdAt: string;
   cancelledAt: string | null;
+  /** v4. v3에서 만든 예매는 CARD로 본다 */
+  paymentMethod: PaymentMethod;
 };
+
+// v4: 배너·공지·랭킹
+export type Banner = {
+  id: number;
+  showId: number;
+  eyebrow: string;
+  title: string;
+  subtitle: string;
+  imageUrl: string;
+  mobileImageUrl: string | null;
+};
+
+export type NoticeCategory = 'TICKET_OPEN' | 'SERVICE';
+export type NoticeSummary = {
+  id: number;
+  category: NoticeCategory;
+  title: string;
+  pinned: boolean;
+  publishedAt: string;
+  ticketOpenAt: string | null;
+  showId: number | null;
+};
+export type Notice = NoticeSummary & { body: string };
+export type NoticePage = { notices: NoticeSummary[]; page: number; totalPages: number; totalCount: number };
+
+export type RankingPeriod = 'DAILY' | 'WEEKLY' | 'ALL';
+export type RankingItem = { rank: number; show: ShowSummary; share: number };
+export type Rankings = { rankedAt: string; period: RankingPeriod; items: RankingItem[] };
 
 export type ApiErrorBody = {
   error: { code: string; message: string; requestId: string; details?: unknown };
@@ -87,6 +144,7 @@ export type ShowQuery = {
   q?: string;
   status?: SaleStatus;
   sort?: 'date' | 'ranking' | 'opening';
+  region?: string;
 };
 
 // v3: 계정과 로그인 상태
@@ -98,6 +156,7 @@ export type ErrorCode =
   | 'VALIDATION_ERROR'
   | 'SHOW_NOT_FOUND'
   | 'PERFORMANCE_NOT_FOUND'
+  | 'NOTICE_NOT_FOUND'
   | 'NOT_ON_SALE'
   | 'SOLD_OUT'
   | 'QUEUE_TOKEN_INVALID'
@@ -149,6 +208,19 @@ export class ApiError extends Error {
     return this.code === 'NETWORK_ERROR' || this.code === 'RATE_LIMITED' || this.status >= 500;
   }
 
+  /**
+   * 서버 쪽 일시 장애(5xx). 예매 진행 요청은 임시 저장소 장애 때 503을 준다.
+   * 코드 이름에 기대지 않고 상태 코드로 판단하고, 문구는 서버 message를 그대로 쓴다.
+   */
+  get isServerTrouble(): boolean {
+    return this.status >= 500;
+  }
+
+  /** v4 엔드포인트가 없는 백엔드(v3)에 붙었을 때의 404 */
+  get isMissingEndpoint(): boolean {
+    return this.status === 404 || this.status === 405;
+  }
+
   /** 문의용 요청 ID: 서버 오류(5xx)일 때만 화면에 보여 준다 */
   get supportId(): string | null {
     return this.status >= 500 ? this.requestId : null;
@@ -163,7 +235,7 @@ export class ApiError extends Error {
 
 export function toApiError(err: unknown): ApiError {
   if (err instanceof ApiError) return err;
-  return new ApiError({ code: 'BAD_RESPONSE', status: 0, message: '알 수 없는 오류가 발생했습니다. 페이지를 새로고침해 주세요.' });
+  return new ApiError({ code: 'BAD_RESPONSE', status: 0, message: '알 수 없는 오류가 발생했어요. 페이지를 새로 고쳐 주세요.' });
 }
 
 export function isAbort(err: unknown): boolean {
@@ -229,8 +301,8 @@ async function rawRequest<T>(path: string, init: Req = {}): Promise<T> {
       code: 'NETWORK_ERROR',
       status: 0,
       message: timedOut
-        ? '서버 응답이 10초 넘게 없어 기다리기를 멈췄습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.'
-        : '서버에 연결하지 못했습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.',
+        ? '서버 응답이 10초 넘게 없어 기다리기를 멈췄어요. 연결 상태를 확인하고 다시 시도해 주세요.'
+        : '서버에 연결하지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.',
     });
   } finally {
     window.clearTimeout(timer);
@@ -249,7 +321,7 @@ async function rawRequest<T>(path: string, init: Req = {}): Promise<T> {
 
   if (res.ok) {
     if (data === null && !init.allowEmpty) {
-      throw new ApiError({ code: 'BAD_RESPONSE', status: res.status, message: '서버 응답을 읽지 못했습니다. 잠시 후 다시 시도해 주세요.' });
+      throw new ApiError({ code: 'BAD_RESPONSE', status: res.status, message: '서버 응답을 읽지 못했어요. 잠시 후 다시 시도해 주세요.' });
     }
     return data as T;
   }
@@ -271,8 +343,10 @@ async function rawRequest<T>(path: string, init: Req = {}): Promise<T> {
     retryAfterSec,
     message:
       res.status === 429
-        ? '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.'
-        : `서버가 요청을 처리하지 못했습니다(HTTP ${res.status}). 잠시 후 다시 시도해 주세요.`,
+        ? '요청이 너무 많아요. 잠시 후 다시 시도해 주세요.'
+        : res.status >= 500
+          ? '서버가 잠시 요청을 처리하지 못하고 있어요. 잠시 후 다시 시도해 주세요.'
+          : `요청을 처리하지 못했어요(HTTP ${res.status}).`,
   });
 }
 
@@ -340,6 +414,38 @@ async function request<T>(path: string, init: Req = {}, retried = false): Promis
 }
 
 const tokenHeader = (queueToken: string) => ({ 'X-Queue-Token': queueToken });
+const enc = (v: string | number) => encodeURIComponent(String(v));
+
+// ── v3 응답에 없는 v4 필드 채우기 ──
+type Partially<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
+
+function normalizeShow<T extends Partially<ShowSummary, 'tagline' | 'region' | 'createdAt'>>(s: T): T & ShowSummary {
+  return {
+    ...s,
+    tagline: typeof s.tagline === 'string' ? s.tagline : '',
+    region: typeof s.region === 'string' ? s.region : '',
+    createdAt: typeof s.createdAt === 'string' ? s.createdAt : s.saleOpensAt,
+  } as T & ShowSummary;
+}
+
+function normalizeDetail(d: Partially<ShowDetail, 'tagline' | 'region' | 'createdAt' | 'venueInfo'>): ShowDetail {
+  const base = normalizeShow(d);
+  const firstPerf = d.performances[0];
+  const seatCount = firstPerf ? firstPerf.remainingByGrade.reduce((n, g) => n + g.total, 0) : 0;
+  const info = d.venueInfo;
+  return {
+    ...base,
+    venueInfo: {
+      name: info?.name || d.venue,
+      region: info?.region || base.region,
+      seatCount: info?.seatCount || seatCount,
+    },
+  };
+}
+
+function normalizeReservation(r: Partially<Reservation, 'paymentMethod'>): Reservation {
+  return { ...r, paymentMethod: r.paymentMethod ?? 'CARD' };
+}
 
 export const api = {
   // 인증
@@ -360,25 +466,57 @@ export const api = {
 
   // 내 예매
   myReservations(signal?: AbortSignal): Promise<Reservation[]> {
-    return request<{ reservations: Reservation[] }>('/me/reservations', { signal }).then((r) => r.reservations);
+    return request<{ reservations: Reservation[] }>('/me/reservations', { signal }).then((r) => r.reservations.map(normalizeReservation));
   },
   cancelMyReservation(code: string): Promise<Reservation> {
-    return request<Reservation>(`/me/reservations/${encodeURIComponent(code)}/cancel`, { method: 'POST' });
+    return request<Reservation>(`/me/reservations/${enc(code)}/cancel`, { method: 'POST' }).then(normalizeReservation);
   },
 
+  // 공연
   listShows(query: ShowQuery, signal?: AbortSignal): Promise<ShowSummary[]> {
     const p = new URLSearchParams();
     if (query.genre) p.set('genre', query.genre);
     if (query.q) p.set('q', query.q);
     if (query.status) p.set('status', query.status);
     if (query.sort) p.set('sort', query.sort);
+    if (query.region) p.set('region', query.region);
     const qs = p.toString();
-    return request<{ shows: ShowSummary[] }>(`/shows${qs ? `?${qs}` : ''}`, { signal }).then((r) => r.shows);
+    return request<{ shows: ShowSummary[] }>(`/shows${qs ? `?${qs}` : ''}`, { signal }).then((r) => r.shows.map(normalizeShow));
   },
   getShow(id: number, signal?: AbortSignal): Promise<ShowDetail> {
-    return request<ShowDetail>(`/shows/${encodeURIComponent(String(id))}`, { signal });
+    return request<ShowDetail>(`/shows/${enc(id)}`, { signal }).then(normalizeDetail);
   },
 
+  // v4: 메인 배너, 공지, 랭킹, 좌석 배치 미리보기 (토큰·로그인 불필요)
+  banners(signal?: AbortSignal): Promise<Banner[]> {
+    return request<{ banners: Banner[] }>('/banners', { signal }).then((r) => (Array.isArray(r.banners) ? r.banners.slice(0, 6) : []));
+  },
+  notices(query: { category?: NoticeCategory; page?: number; size?: number }, signal?: AbortSignal): Promise<NoticePage> {
+    const p = new URLSearchParams();
+    if (query.category) p.set('category', query.category);
+    if (query.page) p.set('page', String(query.page));
+    if (query.size) p.set('size', String(query.size));
+    const qs = p.toString();
+    return request<NoticePage>(`/notices${qs ? `?${qs}` : ''}`, { signal });
+  },
+  notice(id: number, signal?: AbortSignal): Promise<Notice> {
+    return request<Notice>(`/notices/${enc(id)}`, { signal });
+  },
+  rankings(query: { genre?: Genre; period?: RankingPeriod }, signal?: AbortSignal): Promise<Rankings> {
+    const p = new URLSearchParams();
+    if (query.genre) p.set('genre', query.genre);
+    if (query.period) p.set('period', query.period);
+    const qs = p.toString();
+    return request<Rankings>(`/rankings${qs ? `?${qs}` : ''}`, { signal }).then((r) => ({
+      ...r,
+      items: r.items.map((it) => ({ ...it, show: normalizeShow(it.show) })),
+    }));
+  },
+  layout(performanceId: number, signal?: AbortSignal): Promise<SeatLayout> {
+    return request<SeatLayout>(`/performances/${enc(performanceId)}/layout`, { signal });
+  },
+
+  // 대기열
   enterQueue(performanceId: number): Promise<QueueState> {
     return request<QueueState>('/queue/enter', { method: 'POST', body: { performanceId } });
   },
@@ -389,32 +527,28 @@ export const api = {
     return request<void>('/queue', { method: 'DELETE', headers: tokenHeader(queueToken), allowEmpty: true });
   },
 
+  // 좌석
   getSeats(performanceId: number, queueToken: string, signal?: AbortSignal): Promise<SeatMap> {
-    return request<SeatMap>(`/performances/${encodeURIComponent(String(performanceId))}/seats`, {
-      headers: tokenHeader(queueToken),
-      signal,
-    });
+    return request<SeatMap>(`/performances/${enc(performanceId)}/seats`, { headers: tokenHeader(queueToken), signal });
   },
   holdSeats(performanceId: number, seatIds: number[], queueToken: string): Promise<Hold> {
-    return request<Hold>(`/performances/${encodeURIComponent(String(performanceId))}/holds`, {
+    return request<Hold>(`/performances/${enc(performanceId)}/holds`, {
       method: 'POST',
       body: { seatIds },
       headers: tokenHeader(queueToken),
     });
   },
   releaseHold(holdId: string, queueToken: string): Promise<void> {
-    return request<void>(`/holds/${encodeURIComponent(holdId)}`, {
-      method: 'DELETE',
-      headers: tokenHeader(queueToken),
-      allowEmpty: true,
-    });
+    return request<void>(`/holds/${enc(holdId)}`, { method: 'DELETE', headers: tokenHeader(queueToken), allowEmpty: true });
   },
 
-  createReservation(holdId: string, queueToken: string, idempotencyKey: string): Promise<Reservation> {
+  // 예매
+  createReservation(holdId: string, queueToken: string, idempotencyKey: string, paymentMethod: PaymentMethod): Promise<Reservation> {
+    // 계약 v4: paymentMethod가 없으면 CARD. 기본값은 보내지 않아 정의 밖 필드를 거부하는 v3 백엔드와도 맞는다.
     return request<Reservation>('/reservations', {
       method: 'POST',
-      body: { holdId },
+      body: paymentMethod === 'CARD' ? { holdId } : { holdId, paymentMethod },
       headers: { ...tokenHeader(queueToken), 'Idempotency-Key': idempotencyKey },
-    });
+    }).then(normalizeReservation);
   },
 };

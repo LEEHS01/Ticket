@@ -2,16 +2,18 @@
 // - localStorage는 쓰지 않는다(탭을 닫으면 사라져야 함, 계약 3.4).
 // - 토큰·holdId는 URL에 넣지 않고 헤더/body로만 보낸다.
 // - 이름·이메일은 저장하지 않는다.
-import type { Hold } from './api';
+import type { Hold, PerformanceInfo } from './api';
 
 /** 선점한 좌석의 표시용 요약(개인정보 아님) */
 export type HeldSeat = { id: number; row: string; number: number; grade: string; gradeName: string; price: number };
-export type PerfMeta = { showId: number; showTitle: string; venue: string; startsAt: string };
+export type PerfMeta = Omit<PerformanceInfo, 'id'>;
 
 export type BookingSession = {
   performanceId: number;
   showId: number | null;
   queueToken: string;
+  /** 대기열 입장 유효 시각(좌석 선택 남은 시간). 모르면 null */
+  admittedUntil: string | null;
   hold: Hold | null;
   heldSeats: HeldSeat[];
   meta: PerfMeta | null;
@@ -29,6 +31,7 @@ function read(): BookingSession | null {
       performanceId: v.performanceId,
       showId: v.showId ?? null,
       queueToken: v.queueToken,
+      admittedUntil: typeof v.admittedUntil === 'string' ? v.admittedUntil : null,
       hold: v.hold ?? null,
       heldSeats: Array.isArray(v.heldSeats) ? v.heldSeats : [],
       meta: v.meta ?? null,
@@ -57,8 +60,13 @@ export function anyBooking(): BookingSession | null {
   return read();
 }
 
-export function startBooking(performanceId: number, showId: number | null, queueToken: string) {
-  write({ performanceId, showId, queueToken, hold: null, heldSeats: [], meta: null });
+export function startBooking(performanceId: number, showId: number | null, queueToken: string, admittedUntil: string | null = null) {
+  write({ performanceId, showId, queueToken, admittedUntil, hold: null, heldSeats: [], meta: null });
+}
+
+export function setAdmitted(performanceId: number, admittedUntil: string | null) {
+  const s = getBooking(performanceId);
+  if (s && admittedUntil && s.admittedUntil !== admittedUntil) write({ ...s, admittedUntil });
 }
 
 export function setHold(performanceId: number, hold: Hold | null, heldSeats: HeldSeat[] = [], meta?: PerfMeta) {

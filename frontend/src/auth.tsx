@@ -79,15 +79,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
-const isProtected = (path: string) => path.startsWith('/book/') || path.startsWith('/me/');
+const isProtected = (path: string) => path.startsWith('/book/') || path === '/my' || path.startsWith('/my/');
 
 function expiredNotice(here: string) {
   return {
     tone: 'warn',
-    title: '로그인이 만료되었습니다',
+    title: '로그인이 만료됐어요',
     message: here.startsWith('/book/')
-      ? '다시 로그인하면 하던 예매 화면으로 돌아갑니다. 그동안 확보해 둔 좌석은 풀렸을 수 있습니다.'
-      : '다시 로그인하면 보던 화면으로 돌아갑니다.',
+      ? '다시 로그인하면 하던 예매 화면으로 돌아가요. 그동안 확보해 둔 좌석은 풀렸을 수 있어요.'
+      : '다시 로그인하면 보던 화면으로 돌아가요.',
   };
 }
 
@@ -102,7 +102,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   const { status, user, expired } = useAuth();
   const location = useLocation();
   if (status === 'loading') {
-    return <p className="muted" role="status">로그인 상태를 확인하는 중입니다.</p>;
+    return <p className="page-loading" role="status">로그인 상태를 확인하는 중</p>;
   }
   if (!user) {
     return (
@@ -112,7 +112,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
         state={{
           notice: expired
             ? expiredNotice(location.pathname)
-            : { tone: 'info', title: '로그인이 필요합니다', message: '로그인하면 이 화면으로 돌아옵니다.' },
+            : { tone: 'info', title: '로그인이 필요해요', message: '로그인하면 이 화면으로 돌아와요.' },
         }}
       />
     );
