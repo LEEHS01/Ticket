@@ -2,8 +2,12 @@ package com.ticketing.show;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -29,10 +33,11 @@ public class JdbcShowRepository implements ShowRepository {
     }
 
     @Override
-    public List<ShowRow> findAll(Genre genre, String likePattern) {
+    public List<ShowRow> findAll(Genre genre, String likePattern, String region) {
         return jdbc.sql("""
                         SELECT * FROM shows
                          WHERE (:genre IS NULL OR genre = :genre)
+                           AND (:region IS NULL OR region = :region)
                            AND (:pattern IS NULL
                                 OR title LIKE :pattern ESCAPE '\\\\'
                                 OR venue LIKE :pattern ESCAPE '\\\\')
@@ -40,6 +45,7 @@ public class JdbcShowRepository implements ShowRepository {
                         """)
                 .param("genre", genre == null ? null : genre.name())
                 .param("pattern", likePattern)
+                .param("region", region)
                 .query(this::mapShow)
                 .list();
     }
@@ -93,6 +99,34 @@ public class JdbcShowRepository implements ShowRepository {
                 .list();
     }
 
+    /**
+     * v4 랭킹: 공연별 판매 좌석 수(확정 예매만, 취소 제외). since가 null이면 전체 기간.
+     * reservations(status, created_at) 범위 → reservation_seats 개수 → 회차 → 공연(장르 조건).
+     */
+    @Override
+    public Map<Long, Integer> findSoldSeats(Instant since, Genre genre) {
+        Map<Long, Integer> out = new LinkedHashMap<>();
+        jdbc.sql("""
+                        SELECT p.show_id, COUNT(*) AS sold
+                          FROM reservations r
+                          JOIN reservation_seats rs ON rs.reservation_id = r.id
+                          JOIN performances p ON p.id = r.performance_id
+                          JOIN shows s ON s.id = p.show_id
+                         WHERE r.status = 'CONFIRMED'
+                           AND (:since IS NULL OR r.created_at >= :since)
+                           AND (:genre IS NULL OR s.genre = :genre)
+                         GROUP BY p.show_id
+                        """)
+                .param("since", since == null ? null : Timestamp.from(since))
+                .param("genre", genre == null ? null : genre.name())
+                .query((rs, n) -> {
+                    out.put(rs.getLong("show_id"), rs.getInt("sold"));
+                    return null;
+                })
+                .list();
+        return out;
+    }
+
     @Override
     public Optional<PerformanceInfo> findPerformance(long performanceId) {
         return jdbc.sql("""
@@ -113,8 +147,10 @@ public class JdbcShowRepository implements ShowRepository {
         return new ShowRow(
                 rs.getLong("id"),
                 rs.getString("title"),
+                rs.getString("tagline"),
                 Genre.valueOf(rs.getString("genre")),
                 rs.getString("venue"),
+                rs.getString("region"),
                 rs.getTimestamp("sale_opens_at").toInstant(),
                 rs.getString("age_rating"),
                 rs.getInt("running_minutes"),
@@ -125,7 +161,8 @@ public class JdbcShowRepository implements ShowRepository {
                 rs.getInt("poster_hue"),
                 rs.getInt("seat_rows"),
                 rs.getInt("seats_per_row"),
-                read(rs.getString("aisle_after"), INTS));
+                read(rs.getString("aisle_after"), INTS),
+                rs.getTimestamp("created_at").toInstant());
     }
 
     private <T> T read(String value, TypeReference<T> type) {

@@ -39,6 +39,9 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import com.ticketing.auth.AuthController;
 import com.ticketing.auth.AuthService;
 import com.ticketing.auth.SessionAuth;
+import com.ticketing.content.ContentController;
+import com.ticketing.content.ContentService;
+import com.ticketing.content.ContentViews;
 import com.ticketing.common.ApiErrorWriter;
 import com.ticketing.common.ApiException;
 import com.ticketing.common.ErrorCode;
@@ -52,12 +55,16 @@ import com.ticketing.queue.QueueStore;
 import com.ticketing.ratelimit.RateLimiter;
 import com.ticketing.reservation.ReservationController;
 import com.ticketing.reservation.ReservationService;
+import com.ticketing.reservation.PaymentMethod;
 import com.ticketing.reservation.ReservationStatus;
 import com.ticketing.reservation.ReservationView;
 import com.ticketing.seat.SeatController;
 import com.ticketing.seat.SeatService;
+import com.ticketing.seat.SeatViews;
 import com.ticketing.show.Genre;
 import com.ticketing.show.SaleStatus;
+import com.ticketing.show.RankingController;
+import com.ticketing.show.RankingPeriod;
 import com.ticketing.show.ShowController;
 import com.ticketing.show.ShowService;
 import com.ticketing.show.ShowViews;
@@ -67,7 +74,7 @@ import com.ticketing.show.ShowViews;
  * v3 인증(세션의 uid)과 CSRF 필터. 서비스는 목. 세션은 MockHttpSession(실제 MySQL 세션은 통합 테스트).
  */
 @WebMvcTest(controllers = {ShowController.class, QueueController.class, SeatController.class,
-        ReservationController.class, AuthController.class},
+        ReservationController.class, AuthController.class, ContentController.class, RankingController.class},
         properties = {
                 "app.db.host=x", "app.db.port=3306", "app.db.name=x", "app.db.user=x", "app.db.password=x",
                 "app.db.ssl-mode=PREFERRED", "app.db.pool-size=1",
@@ -106,6 +113,8 @@ class ApiWebTest {
     AuthService authService;
     @MockitoBean
     RateLimiter rateLimiter;
+    @MockitoBean
+    ContentService contentService;
 
     @Autowired
     RedisBackoff redisBackoff;
@@ -132,7 +141,7 @@ class ApiWebTest {
     private static ReservationView sample() {
         return new ReservationView("ABCDEFGHJK23", new ReservationView.ShowRef(1, "재즈", "홀"),
                 new ReservationView.PerformanceRef(5, Instant.parse("2026-12-01T10:30:00Z")),
-                List.of(new ReservationView.SeatLine("A", 3, "R", 100_000)), 100_000, "홍길동", "ab***@example.com",
+                List.of(new ReservationView.SeatLine("A", 3, "R", 100_000)), 100_000, PaymentMethod.CARD, "홍길동", "ab***@example.com",
                 ReservationStatus.CONFIRMED, Instant.parse("2026-11-13T03:00:00Z"), null);
     }
 
@@ -256,10 +265,10 @@ class ApiWebTest {
 
     @Test
     void 공연_목록은_쿼리를_검증하고_정의되지_않은_파라미터는_400() throws Exception {
-        when(showService.list(any())).thenReturn(List.of(new ShowViews.ShowSummary(1, "재즈", Genre.CONCERT, "홀",
+        when(showService.list(any())).thenReturn(List.of(new ShowViews.ShowSummary(1, "재즈", "한 줄 소개", Genre.CONCERT, "홀", "서울",
                 Instant.parse("2026-12-01T10:30:00Z"), Instant.parse("2026-12-02T10:30:00Z"),
                 Instant.parse("2026-11-01T01:00:00Z"), 50_000, 100_000, SaleStatus.ON_SALE, 10, 20, null,
-                new ShowViews.Poster(7, 210))));
+                new ShowViews.Poster(7, 210), Instant.parse("2026-10-01T00:00:00Z"))));
 
         mvc.perform(get("/api/shows").param("genre", "concert").param("sort", "ranking").param("q", "재즈"))
                 .andExpect(status().isOk())
@@ -318,7 +327,7 @@ class ApiWebTest {
 
     @Test
     void 예매_확정은_holdId만_받고_201과_계약의_Reservation_형태() throws Exception {
-        when(reservationService.confirm(USER, TOKEN, KEY, HOLD)).thenReturn(sample());
+        when(reservationService.confirm(USER, TOKEN, KEY, HOLD, PaymentMethod.CARD)).thenReturn(sample());
 
         mvc.perform(authed(post("/api/reservations")).header("X-Queue-Token", TOKEN).header("Idempotency-Key", KEY)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"holdId\":\"" + HOLD + "\"}"))
@@ -326,6 +335,7 @@ class ApiWebTest {
                 .andExpect(header().string("Content-Type", "application/json;charset=UTF-8"))
                 .andExpect(jsonPath("$.seats[0].row").value("A"))
                 .andExpect(jsonPath("$.cancelledAt").hasJsonPath())
+                .andExpect(jsonPath("$.paymentMethod").value("CARD"))
                 .andExpect(header().string("Cache-Control", "no-store"));
         // v2처럼 name·email을 보내면 정의되지 않은 필드로 거부
         mvc.perform(authed(post("/api/reservations")).header("X-Queue-Token", TOKEN).header("Idempotency-Key", KEY)
@@ -407,5 +417,94 @@ class ApiWebTest {
         // 내 예매(MySQL만)는 그대로 200
         when(reservationService.myReservations(USER)).thenReturn(List.of());
         mvc.perform(get("/api/me/reservations").session(loggedIn())).andExpect(status().isOk());
+    }
+    // ---------------- v4 ----------------
+
+    @Test
+    void v4_결제_수단은_정의된_이름만_받고_없으면_CARD() throws Exception {
+        when(reservationService.confirm(USER, TOKEN, KEY, HOLD, PaymentMethod.EASY_PAY)).thenReturn(sample());
+        String ok = "{\"holdId\":\"" + HOLD + "\",\"paymentMethod\":\"EASY_PAY\"}";
+        mvc.perform(authed(post("/api/reservations")).header("X-Queue-Token", TOKEN).header("Idempotency-Key", KEY)
+                        .contentType(MediaType.APPLICATION_JSON).content(ok))
+                .andExpect(status().isCreated());
+        verify(reservationService).confirm(USER, TOKEN, KEY, HOLD, PaymentMethod.EASY_PAY);
+        for (String bad : new String[] {"\"PAYPAL\"", "\"easy_pay\"", "0", "true", "{}"}) {
+            mvc.perform(authed(post("/api/reservations")).header("X-Queue-Token", TOKEN).header("Idempotency-Key", KEY)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"holdId\":\"" + HOLD + "\",\"paymentMethod\":" + bad + "}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+        }
+        verify(reservationService, never()).confirm(anyLong(), anyString(), anyString(), anyString(),
+                org.mockito.ArgumentMatchers.eq(PaymentMethod.BANK_TRANSFER));
+    }
+
+    @Test
+    void v4_공지_목록은_category_page_size를_검증하고_정의되지_않은_파라미터는_400() throws Exception {
+        when(contentService.notices(null, 1, 20)).thenReturn(new ContentViews.NoticePage(List.of(), 1, 0, 0));
+        mvc.perform(get("/api/notices"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.notices").isArray())
+                .andExpect(jsonPath("$.totalPages").value(0))
+                .andExpect(header().string("Cache-Control", "no-store"));
+        when(contentService.notices(ContentViews.NoticeCategory.TICKET_OPEN, 2, 50))
+                .thenReturn(new ContentViews.NoticePage(List.of(), 2, 1, 3));
+        mvc.perform(get("/api/notices").param("category", "ticket_open").param("page", "2").param("size", "50"))
+                .andExpect(status().isOk());
+        String[][] bad = {{"page", "0"}, {"page", "-1"}, {"page", "1.5"}, {"page", "x"}, {"size", "0"}, {"size", "51"},
+                {"category", "EVENT"}, {"sort", "new"}};
+        for (String[] p : bad) {
+            mvc.perform(get("/api/notices").param(p[0], p[1]))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+        }
+        when(contentService.notice(5L)).thenThrow(new ApiException(ErrorCode.NOTICE_NOT_FOUND));
+        mvc.perform(get("/api/notices/5")).andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("NOTICE_NOT_FOUND"));
+        mvc.perform(get("/api/notices/0")).andExpect(status().isNotFound());
+        mvc.perform(get("/api/notices/abc")).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void v4_배너_랭킹은_로그인_없이_되고_잘못된_조건은_400() throws Exception {
+        when(contentService.banners()).thenReturn(List.of(
+                new ContentViews.Banner(1, 15, "뮤지컬", "제목", "부제", "/banners/banner-15.webp", null)));
+        mvc.perform(get("/api/banners"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.banners[0].imageUrl").value("/banners/banner-15.webp"))
+                .andExpect(jsonPath("$.banners[0].mobileImageUrl").hasJsonPath());
+        mvc.perform(get("/api/banners").param("limit", "10")).andExpect(status().isBadRequest());
+
+        when(showService.rankings(Genre.CONCERT, RankingPeriod.DAILY)).thenReturn(
+                new ShowViews.Rankings(Instant.parse("2026-11-24T03:00:00Z"), RankingPeriod.DAILY, List.of()));
+        mvc.perform(get("/api/rankings").param("genre", "concert").param("period", "daily"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.period").value("DAILY"))
+                .andExpect(jsonPath("$.items").isArray());
+        mvc.perform(get("/api/rankings").param("period", "MONTHLY")).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/rankings").param("genre", "JAZZ")).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/rankings").param("page", "1")).andExpect(status().isBadRequest());
+        // 공연 목록의 region 필터(10자 이내)
+        mvc.perform(get("/api/shows").param("region", "서울")).andExpect(status().isOk());
+        mvc.perform(get("/api/shows").param("region", "가".repeat(11))).andExpect(status().isBadRequest());
+        // 요청 제한은 일반 조회 버킷
+        for (String path : new String[] {"/api/banners", "/api/notices", "/api/notices/3", "/api/rankings",
+                "/api/performances/12/layout"}) {
+            assertThat(RateLimitFilter.bucketOf("GET", path)).isEqualTo("general");
+        }
+    }
+
+    @Test
+    void v4_좌석_배치는_로그인과_대기열_토큰_없이_200() throws Exception {
+        when(seatService.layout(12L)).thenReturn(new SeatViews.SeatLayout(
+                new SeatViews.PerformanceRef(12, 3, "공연", "홀", Instant.parse("2026-12-01T10:30:00Z")),
+                List.of(new ShowViews.Grade("R", "R석", 100_000)), List.of("A"), 4, List.of(2),
+                List.of(new SeatViews.LayoutSeat("A", 1, "R"))));
+        mvc.perform(get("/api/performances/12/layout"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.seats[0].row").value("A"))
+                .andExpect(jsonPath("$.seats[0].status").doesNotExist())
+                .andExpect(jsonPath("$.seats[0].id").doesNotExist());
+        mvc.perform(get("/api/performances/0/layout")).andExpect(status().isNotFound());
     }
 }

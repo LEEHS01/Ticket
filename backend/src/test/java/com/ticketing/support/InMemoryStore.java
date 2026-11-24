@@ -81,9 +81,14 @@ public final class InMemoryStore {
     // ---------- 테스트 데이터 만들기 ----------
 
     public long addShow(String title, Genre genre, Instant saleOpensAt) {
+        return addShow(title, genre, saleOpensAt, "서울");
+    }
+
+    /** v4: 지역을 고른 공연(tagline = "한 줄 소개", 등록 시각 = 판매 시작 시각). */
+    public long addShow(String title, Genre genre, Instant saleOpensAt, String region) {
         long id = ids.incrementAndGet();
-        shows.put(id, new ShowRow(id, title, genre, "테스트홀", saleOpensAt, "전체 관람가", 100, List.of("출연"),
-                "설명", List.of("유의"), 1, 10, 2, 4, List.of(2)));
+        shows.put(id, new ShowRow(id, title, "한 줄 소개", genre, "테스트홀", region, saleOpensAt, "전체 관람가", 100,
+                List.of("출연"), "설명", List.of("유의"), 1, 10, 2, 4, List.of(2), saleOpensAt));
         grades.add(new GradeRow(id, "R", "R석", 100_000, 0));
         grades.add(new GradeRow(id, "S", "S석", 50_000, 1));
         return id;
@@ -120,12 +125,13 @@ public final class InMemoryStore {
 
     public final class Shows implements ShowRepository {
         @Override
-        public List<ShowRow> findAll(Genre genre, String likePattern) {
+        public List<ShowRow> findAll(Genre genre, String likePattern, String region) {
             String needle = likePattern == null ? null
                     : likePattern.substring(1, likePattern.length() - 1).replace("\\%", "%").replace("\\_", "_")
                     .replace("\\\\", "\\");
             return shows.values().stream()
                     .filter(s -> genre == null || s.genre() == genre)
+                    .filter(s -> region == null || s.region().equals(region))
                     .filter(s -> needle == null || s.title().contains(needle) || s.venue().contains(needle))
                     .toList();
         }
@@ -164,6 +170,23 @@ public final class InMemoryStore {
             return out;
         }
 
+        /** v4 랭킹 흉내: 확정 예매(취소 제외)의 좌석 수를 공연별로. since 이후에 만든 예매만. */
+        @Override
+        public Map<Long, Integer> findSoldSeats(Instant since, Genre genre) {
+            Map<Long, Integer> out = new LinkedHashMap<>();
+            for (ReservationRow r : reservations.values()) {
+                if (r.status() != ReservationStatus.CONFIRMED || (since != null && r.createdAt().isBefore(since))) {
+                    continue;
+                }
+                if (genre != null && shows.get(r.showId()).genre() != genre) {
+                    continue;
+                }
+                out.merge(r.showId(), reservationSeats.getOrDefault(r.id(), List.of()).size(), Integer::sum);
+            }
+            out.values().removeIf(v -> v == 0);
+            return out;
+        }
+
         @Override
         public Optional<PerformanceInfo> findPerformance(long performanceId) {
             long[] p = performances.get(performanceId);
@@ -179,6 +202,12 @@ public final class InMemoryStore {
     // ---------- SeatRepository ----------
 
     public final class Seats implements SeatRepository {
+        @Override
+        public List<LayoutSeat> findLayout(long performanceId) {
+            return seats.values().stream().filter(s -> s.performanceId == performanceId)
+                    .map(s -> new LayoutSeat(s.row, s.number, s.grade)).toList();
+        }
+
         @Override
         public List<SeatRow> findByPerformance(long performanceId) {
             return seats.values().stream().filter(s -> s.performanceId == performanceId)
@@ -241,7 +270,7 @@ public final class InMemoryStore {
             long[] p = performances.get(r.performanceId());
             ShowRow s = shows.get(p[0]);
             reservations.put(id, new ReservationRow(id, r.code(), r.performanceId(), Instant.ofEpochMilli(p[1]), s.id(),
-                    s.title(), s.venue(), r.totalPrice(), r.name(), r.emailHash(), r.emailMasked(),
+                    s.title(), s.venue(), r.totalPrice(), r.paymentMethod(), r.name(), r.emailHash(), r.emailMasked(),
                     ReservationStatus.CONFIRMED, r.createdAt(), null));
             owner.put(id, r.userId());
             return id;

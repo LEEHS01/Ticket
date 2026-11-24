@@ -16,6 +16,13 @@ public interface SeatRepository {
     /** 회차의 모든 좌석(행 → 번호 순). 좌석 화면 폴링용이라 쿼리 한 번으로 끝난다. */
     List<SeatRow> findByPerformance(long performanceId);
 
+    /** v4 배치 미리보기용 좌석 칸(위치·등급만). 판매·선점 상태와 좌석 id는 담지 않는다. */
+    record LayoutSeat(String row, int number, String grade) {
+    }
+
+    /** 회차의 좌석 칸(행 → 번호 순). status 열을 읽지 않는다. */
+    List<LayoutSeat> findLayout(long performanceId);
+
     /** 이 회차에 속한 좌석만 가격과 함께 돌려준다(없는 id는 빠짐). */
     List<PricedSeat> findPriced(long performanceId, Collection<Long> seatIds);
 

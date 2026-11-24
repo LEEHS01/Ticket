@@ -7,8 +7,10 @@ import java.util.List;
 public record ShowRow(
         long id,
         String title,
+        String tagline,
         Genre genre,
         String venue,
+        String region,
         Instant saleOpensAt,
         String ageRating,
         int runningMinutes,
@@ -19,5 +21,6 @@ public record ShowRow(
         int posterHue,
         int seatRows,
         int seatsPerRow,
-        List<Integer> aisleAfter) {
+        List<Integer> aisleAfter,
+        Instant createdAt) {
 }

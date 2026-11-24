@@ -15,6 +15,8 @@ public enum ErrorCode {
     HOLD_NOT_FOUND(HttpStatus.NOT_FOUND, "선택한 좌석 정보를 찾을 수 없습니다."),
     HOLD_EXPIRED(HttpStatus.CONFLICT, "좌석 선택 시간이 지났습니다. 좌석을 다시 골라 주세요."),
     RESERVATION_NOT_FOUND(HttpStatus.NOT_FOUND, "예매 내역을 찾을 수 없습니다."),
+    // v4
+    NOTICE_NOT_FOUND(HttpStatus.NOT_FOUND, "공지사항을 찾을 수 없습니다."),
     ALREADY_CANCELLED(HttpStatus.CONFLICT, "이미 취소된 예매입니다."),
     PERFORMANCE_CLOSED(HttpStatus.CONFLICT, "이미 시작했거나 종료된 회차는 취소할 수 없습니다."),
     // v3 인증

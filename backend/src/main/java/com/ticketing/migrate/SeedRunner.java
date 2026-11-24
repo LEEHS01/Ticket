@@ -29,8 +29,9 @@ public class SeedRunner implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         Seeder.Result result = seeder.seed(clock.instant());
-        log.info("마이그레이션·시드 완료: 공연 {}개·회차 {}개 upsert, 새 좌석 {}석, 새 시드 예매 {}건, 시연 계정 {}",
+        log.info("마이그레이션·시드 완료: 공연 {}개·회차 {}개 upsert, 새 좌석 {}석, 새 시드 예매 {}건, 배너 {}개·공지 {}건 upsert, 시연 계정 {}",
                 result.shows(), result.performances(), result.newSeats(), result.newSeedReservations(),
+                result.banners(), result.notices(),
                 result.demoAccount() ? "생성·갱신" : "건너뜀(SEED_DEMO_EMAIL·SEED_DEMO_PASSWORD 없음)");
     }
 }

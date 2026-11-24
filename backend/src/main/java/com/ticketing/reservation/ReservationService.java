@@ -78,6 +78,12 @@ public class ReservationService {
     }
 
     public ReservationView confirm(long userId, String token, String idempotencyKey, String holdId) {
+        return confirm(userId, token, idempotencyKey, holdId, PaymentMethod.CARD);
+    }
+
+    /** v4: 모의 결제 수단(이름만 기록). 같은 멱등키 재전송은 처음 응답(처음 고른 수단)을 그대로 돌려준다. */
+    public ReservationView confirm(long userId, String token, String idempotencyKey, String holdId,
+            PaymentMethod paymentMethod) {
         String key = userId + ":" + idempotencyKey;
         long deadline = System.nanoTime() + inProgressWait.toNanos();
         while (true) {
@@ -87,7 +93,7 @@ public class ReservationService {
                     return done.response();
                 }
                 case IdempotencyStore.Acquired acquired -> {
-                    return confirmOwned(userId, token, key, holdId);
+                    return confirmOwned(userId, token, key, holdId, paymentMethod);
                 }
                 case IdempotencyStore.InProgress inProgress -> {
                     if (System.nanoTime() >= deadline) {
@@ -99,10 +105,11 @@ public class ReservationService {
         }
     }
 
-    private ReservationView confirmOwned(long userId, String token, String key, String holdId) {
+    private ReservationView confirmOwned(long userId, String token, String key, String holdId,
+            PaymentMethod paymentMethod) {
         ReservationView view;
         try {
-            view = createReservation(userId, token, holdId);
+            view = createReservation(userId, token, holdId, paymentMethod);
         } catch (RuntimeException e) {
             // 실패(4xx·5xx)는 멱등 결과로 저장하지 않는다 → 같은 키로 재시도 가능
             releaseQuietly(key);
@@ -116,7 +123,8 @@ public class ReservationService {
         return view;
     }
 
-    private ReservationView createReservation(long userId, String token, String holdId) {
+    private ReservationView createReservation(long userId, String token, String holdId,
+            PaymentMethod paymentMethod) {
         // 선점부터 본다(next): Redis가 비었거나(장애 전환·재시작) 선점이 만료됐으면 대기열 토큰도 함께 사라지는데,
         // 이때 사용자에게는 "좌석을 다시 고르라"(409 HOLD_EXPIRED)가 맞다. 화면은 좌석 화면으로 돌아가고,
         // 좌석 조회가 401 QUEUE_TOKEN_INVALID를 받으면 그때 다시 줄을 선다.
@@ -161,7 +169,7 @@ public class ReservationService {
                 for (int attempt = 1; ; attempt++) {
                     code = codes.next();
                     try {
-                        id = reservations.insert(new NewReservation(code, perf.id(), userId, total, user.name(),
+                        id = reservations.insert(new NewReservation(code, perf.id(), userId, total, paymentMethod, user.name(),
                                 emailHash, emailMasked, now));
                         break;
                     } catch (DuplicateKeyException e) {
@@ -176,7 +184,7 @@ public class ReservationService {
                 }
                 reservations.insertSeats(id, priced);
                 return new ReservationRow(id, code, perf.id(), perf.startsAt(), perf.showId(), perf.showTitle(),
-                        perf.venue(), total, user.name(), emailHash, emailMasked, ReservationStatus.CONFIRMED, now,
+                        perf.venue(), total, paymentMethod, user.name(), emailHash, emailMasked, ReservationStatus.CONFIRMED, now,
                         null);
             });
         } catch (SeatConflict e) {

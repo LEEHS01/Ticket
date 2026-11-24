@@ -12,6 +12,7 @@ public record ReservationRow(
         String showTitle,
         String venue,
         int totalPrice,
+        PaymentMethod paymentMethod,
         String name,
         String emailHash,
         String emailMasked,
@@ -21,6 +22,6 @@ public record ReservationRow(
 
     public ReservationRow cancelled(Instant at) {
         return new ReservationRow(id, code, performanceId, performanceStartsAt, showId, showTitle, venue, totalPrice,
-                name, emailHash, emailMasked, ReservationStatus.CANCELLED, createdAt, at);
+                paymentMethod, name, emailHash, emailMasked, ReservationStatus.CANCELLED, createdAt, at);
     }
 }

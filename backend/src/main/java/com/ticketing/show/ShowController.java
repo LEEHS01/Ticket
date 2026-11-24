@@ -19,8 +19,9 @@ import com.ticketing.common.ErrorCode;
 @RequestMapping("/api/shows")
 public class ShowController {
 
-    private static final Set<String> ALLOWED_QUERY = Set.of("genre", "q", "status", "sort");
+    private static final Set<String> ALLOWED_QUERY = Set.of("genre", "q", "status", "sort", "region");
     public static final int MAX_QUERY_LENGTH = 40;
+    public static final int MAX_REGION_LENGTH = 10;
 
     private final ShowService service;
 
@@ -33,7 +34,8 @@ public class ShowController {
             @RequestParam(required = false) String genre,
             @RequestParam(required = false) String q,
             @RequestParam(required = false) String status,
-            @RequestParam(required = false) String sort) {
+            @RequestParam(required = false) String sort,
+            @RequestParam(required = false) String region) {
         // 정의되지 않은 쿼리 파라미터는 거부(오타·조작을 조용히 무시하지 않는다)
         for (String name : request.getParameterMap().keySet()) {
             if (!ALLOWED_QUERY.contains(name)) {
@@ -43,11 +45,14 @@ public class ShowController {
         if (q != null && q.trim().length() > MAX_QUERY_LENGTH) {
             throw invalid("q", "검색어는 40자 이내로 입력해 주세요.");
         }
+        if (region != null && region.trim().length() > MAX_REGION_LENGTH) {
+            throw invalid("region", "지역은 10자 이내로 입력해 주세요.");
+        }
         ShowService.Query query = new ShowService.Query(
                 parse(Genre.class, genre, "genre", "장르 값이 올바르지 않습니다."),
                 q,
                 parse(SaleStatus.class, status, "status", "판매 상태 값이 올바르지 않습니다."),
-                parse(ShowService.Sort.class, sort, "sort", "정렬 기준은 date, ranking, opening 중 하나여야 합니다."));
+                parse(ShowService.Sort.class, sort, "sort", "정렬 기준은 date, ranking, opening 중 하나여야 합니다."), region);
         return new ShowViews.ShowListResponse(service.list(query));
     }
 
@@ -59,7 +64,7 @@ public class ShowController {
         return service.get(id);
     }
 
-    private static <E extends Enum<E>> E parse(Class<E> type, String value, String field, String message) {
+    static <E extends Enum<E>> E parse(Class<E> type, String value, String field, String message) {
         if (value == null || value.isBlank()) {
             return null;
         }
@@ -70,12 +75,12 @@ public class ShowController {
         }
     }
 
-    private static ApiException invalid(String field, String message) {
+    static ApiException invalid(String field, String message) {
         return new ApiException(ErrorCode.VALIDATION_ERROR, message,
                 java.util.List.of(new ApiError.FieldViolation(field, message)));
     }
 
-    private static String safe(String s) {
+    static String safe(String s) {
         return s.matches("^[A-Za-z0-9_]{1,30}$") ? s : "?";
     }
 }

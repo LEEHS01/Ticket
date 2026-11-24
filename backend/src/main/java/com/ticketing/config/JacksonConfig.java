@@ -25,6 +25,8 @@ public class JacksonConfig {
                         DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES,
                         DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES,
                         DeserializationFeature.FAIL_ON_TRAILING_TOKENS,
+                        // v4 paymentMethod: 0·1 같은 순번으로 enum을 고르지 못하게(정의된 이름만)
+                        DeserializationFeature.FAIL_ON_NUMBERS_FOR_ENUMS,
                         JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
                 .featuresToDisable(DeserializationFeature.ACCEPT_FLOAT_AS_INT)
                 .postConfigurer(mapper -> {

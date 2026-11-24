@@ -45,6 +45,12 @@ public class SeatController {
         return service.seatMap(userId, token, positive(id));
     }
 
+    /** v4 좌석 배치 미리보기. 토큰·로그인 불필요, 좌석 상태 없음. */
+    @GetMapping("/api/performances/{id}/layout")
+    public SeatViews.SeatLayout layout(@PathVariable long id) {
+        return service.layout(positive(id));
+    }
+
     @PostMapping(path = "/api/performances/{id}/holds", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<SeatViews.HoldView> hold(@PathVariable long id,
             @RequestHeader(value = QueueController.TOKEN_HEADER, required = false) String token,

@@ -49,7 +49,8 @@ public class ReservationController {
         if (!UUID.matcher(idempotencyKey).matches()) {
             throw new ApiException(ErrorCode.VALIDATION_ERROR, "Idempotency-Key 헤더는 UUID 형식이어야 합니다.");
         }
-        ReservationView view = service.confirm(userId, token, idempotencyKey.toLowerCase(Locale.ROOT), body.holdId());
+        ReservationView view = service.confirm(userId, token, idempotencyKey.toLowerCase(Locale.ROOT), body.holdId(),
+                body.paymentMethodOrDefault());
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 

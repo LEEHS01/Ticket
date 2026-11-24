@@ -10,6 +10,7 @@ public record ReservationView(
         PerformanceRef performance,
         List<SeatLine> seats,
         int totalPrice,
+        PaymentMethod paymentMethod,
         String name,
         String emailMasked,
         ReservationStatus status,
@@ -27,7 +28,7 @@ public record ReservationView(
 
     public static ReservationView of(ReservationRow r, List<SeatLine> seats) {
         return new ReservationView(r.code(), new ShowRef(r.showId(), r.showTitle(), r.venue()),
-                new PerformanceRef(r.performanceId(), r.performanceStartsAt()), seats, r.totalPrice(), r.name(),
+                new PerformanceRef(r.performanceId(), r.performanceStartsAt()), seats, r.totalPrice(), r.paymentMethod(), r.name(),
                 r.emailMasked(), r.status(), r.createdAt(), r.cancelledAt());
     }
 }

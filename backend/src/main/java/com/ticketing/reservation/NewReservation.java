@@ -8,6 +8,7 @@ public record NewReservation(
         long performanceId,
         long userId,
         int totalPrice,
+        PaymentMethod paymentMethod,
         String name,
         String emailHash,
         String emailMasked,

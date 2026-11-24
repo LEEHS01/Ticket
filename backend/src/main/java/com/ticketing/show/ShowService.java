@@ -17,6 +17,9 @@ import com.ticketing.common.ErrorCode;
 import com.ticketing.show.ShowViews.Grade;
 import com.ticketing.show.ShowViews.GradeRemaining;
 import com.ticketing.show.ShowViews.PerformanceSummary;
+import com.ticketing.show.ShowViews.RankingItem;
+import com.ticketing.show.ShowViews.Rankings;
+import com.ticketing.show.ShowViews.VenueInfo;
 import com.ticketing.show.ShowViews.Poster;
 import com.ticketing.show.ShowViews.ShowDetail;
 import com.ticketing.show.ShowViews.ShowSummary;
@@ -32,8 +35,16 @@ public class ShowService {
 
     public enum Sort { DATE, RANKING, OPENING }
 
-    public record Query(Genre genre, String q, SaleStatus status, Sort sort) {
+    /** region(v4): 공연장 지역, 정확히 일치. null이면 조건 없음. */
+    public record Query(Genre genre, String q, SaleStatus status, Sort sort, String region) {
+
+        public Query(Genre genre, String q, SaleStatus status, Sort sort) {
+            this(genre, q, status, sort, null);
+        }
     }
+
+    /** v4 랭킹: 최대 20개. */
+    public static final int RANKING_SIZE = 20;
 
     private final ShowRepository shows;
     private final Clock clock;
@@ -44,7 +55,8 @@ public class ShowService {
     }
 
     public List<ShowSummary> list(Query query) {
-        List<ShowRow> rows = shows.findAll(query.genre(), likePattern(query.q()));
+        List<ShowRow> rows = shows.findAll(query.genre(), likePattern(query.q()),
+                query.region() == null || query.region().isBlank() ? null : query.region().trim());
         List<PerformanceGradeStat> allStats = shows.findPerformanceStats(null);
         Map<Long, Integer> ranks = ranks(allStats);
         Map<Long, List<GradeRow>> grades = shows.findGrades(rows.stream().map(ShowRow::id).toList()).stream()
@@ -74,12 +86,15 @@ public class ShowService {
         List<PerformanceGradeStat> mine = allStats.stream().filter(s -> s.showId() == id).toList();
         Computed c = summarize(row, grades, mine, ranks(allStats).get(id), clock.instant());
         ShowSummary s = c.summary();
-        return new ShowDetail(s.id(), s.title(), s.genre(), s.venue(), s.firstStartsAt(), s.lastStartsAt(),
-                s.saleOpensAt(), s.minPrice(), s.maxPrice(), s.status(), s.remainingSeats(), s.totalSeats(), s.rank(),
-                s.poster(), row.ageRating(), row.runningMinutes(), row.cast(), row.description(), row.notices(),
+        // 회차 하나의 좌석 수: 회차마다 같은 공연장 배치라 첫 회차 기준(회차가 없으면 0)
+        int seatCount = mine.stream().filter(st -> st.performanceId() == mine.get(0).performanceId())
+                .mapToInt(PerformanceGradeStat::total).sum();
+        return new ShowDetail(s.id(), s.title(), s.tagline(), s.genre(), s.venue(), s.region(), s.firstStartsAt(),
+                s.lastStartsAt(), s.saleOpensAt(), s.minPrice(), s.maxPrice(), s.status(), s.remainingSeats(),
+                s.totalSeats(), s.rank(), s.poster(), s.createdAt(), row.ageRating(), row.runningMinutes(), row.cast(), row.description(), row.notices(),
                 MAX_SEATS_PER_BOOKING,
                 grades.stream().map(g -> new Grade(g.code(), g.name(), g.price())).toList(),
-                c.performances());
+                c.performances(), new VenueInfo(row.venue(), row.region(), mine.isEmpty() ? 0 : seatCount));
     }
 
     private record Computed(ShowSummary summary, List<PerformanceSummary> performances) {
@@ -122,10 +137,44 @@ public class ShowService {
         int minPrice = sortedGrades.stream().mapToInt(GradeRow::price).min().orElse(0);
         int maxPrice = sortedGrades.stream().mapToInt(GradeRow::price).max().orElse(0);
 
-        ShowSummary summary = new ShowSummary(row.id(), row.title(), row.genre(), row.venue(), first, last,
-                row.saleOpensAt(), minPrice, maxPrice, showStatus, remainingOpen, total, rank,
-                new Poster(row.posterSeed(), row.posterHue()));
+        ShowSummary summary = new ShowSummary(row.id(), row.title(), row.tagline(), row.genre(), row.venue(),
+                row.region(), first, last, row.saleOpensAt(), minPrice, maxPrice, showStatus, remainingOpen, total, rank,
+                new Poster(row.posterSeed(), row.posterHue()), row.createdAt());
         return new Computed(summary, performances);
+    }
+
+    /**
+     * v4 랭킹: 기간(DAILY 24시간·WEEKLY 7일·ALL) 안에 확정된 예매의 좌석 수(취소 제외)로 순위를 매긴다.
+     * 판매 0인 공연은 빼고, 같으면 공연 id 오름차순. share = 그 공연 판매 / 같은 조건 전체 판매 × 100, 소수 첫째 자리(반올림).
+     * 반올림과 상위 20개 자르기 때문에 share 합이 정확히 100이 아닐 수 있다.
+     */
+    public Rankings rankings(Genre genre, RankingPeriod period) {
+        RankingPeriod p = period == null ? RankingPeriod.WEEKLY : period;
+        Instant now = clock.instant();
+        Instant since = p.window() == null ? null : now.minus(p.window());
+        Map<Long, Integer> sold = shows.findSoldSeats(since, genre);
+        long totalSold = sold.values().stream().mapToLong(Integer::longValue).sum();
+        List<Map.Entry<Long, Integer>> ordered = sold.entrySet().stream()
+                .filter(e -> e.getValue() > 0)
+                .sorted(Map.Entry.<Long, Integer>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()))
+                .limit(RANKING_SIZE)
+                .toList();
+        if (ordered.isEmpty()) {
+            return new Rankings(now, p, List.of());
+        }
+        Map<Long, ShowSummary> summaries = list(new Query(null, null, null, null)).stream()
+                .collect(Collectors.toMap(ShowSummary::id, s -> s));
+        List<RankingItem> items = new ArrayList<>();
+        for (Map.Entry<Long, Integer> e : ordered) {
+            ShowSummary s = summaries.get(e.getKey());
+            if (s == null) {
+                continue;
+            }
+            double share = java.math.BigDecimal.valueOf(e.getValue() * 100.0 / totalSold)
+                    .setScale(1, java.math.RoundingMode.HALF_UP).doubleValue();
+            items.add(new RankingItem(items.size() + 1, s, share));
+        }
+        return new Rankings(now, p, items);
     }
 
     /** 판매 좌석 수 내림차순 순위(1부터). 같으면 id 오름차순. 판매 0인 공연은 순위 없음. */

@@ -30,6 +30,21 @@ public class JdbcSeatRepository implements SeatRepository {
     }
 
     @Override
+    public List<LayoutSeat> findLayout(long performanceId) {
+        // 상태(status)·예매(reservation_id)·id를 SELECT하지 않는다 → 배치 응답으로 판매 여부가 새지 않는다
+        return jdbc.sql("""
+                        SELECT row_label, seat_number, grade_code
+                          FROM seats
+                         WHERE performance_id = :p
+                         ORDER BY CHAR_LENGTH(row_label), row_label, seat_number
+                        """)
+                .param("p", performanceId)
+                .query((rs, n) -> new LayoutSeat(rs.getString("row_label"), rs.getInt("seat_number"),
+                        rs.getString("grade_code")))
+                .list();
+    }
+
+    @Override
     public List<PricedSeat> findPriced(long performanceId, Collection<Long> seatIds) {
         if (seatIds.isEmpty()) {
             return List.of();

@@ -1,7 +1,7 @@
-# 티켓 예매 API (backend) — next (v3 계약 유지)
+# 티켓 예매 API (backend) — next (계약 v4)
 
 공연 찾기 → 회차 선택 → **로그인** → **접속 대기열** → **좌석 선택(임시 선점)** → 예매 확정 → **내 예매**(조회·취소)를 제공하는 **상태 없는** Spring Boot API입니다.
-계약(엔드포인트·응답 형태·오류 코드)은 [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) 4장(v3)이 기준입니다.
+계약은 [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) 4장(v3) + [`../docs/next/API-v4.md`](../docs/next/API-v4.md)(v4에서 추가·변경된 것)입니다.
 
 | 항목 | 선택 |
 |---|---|
@@ -26,6 +26,28 @@
 
 > 이 PC에는 JDK 21이 없으므로 **빌드·테스트·실행을 모두 Docker로** 합니다. 아래 명령은 PowerShell 기준입니다
 > (Git Bash에서는 `/tmp` 같은 경로가 바뀌지 않도록 앞에 `MSYS_NO_PATHCONV=1`을 붙이세요).
+
+### API v4 (`docs/next/API-v4.md`, v3에서 추가·변경된 것만)
+
+| 엔드포인트 | 내용 | DB 문장 | 쓰는 인덱스 |
+|---|---|---|---|
+| `GET /api/banners` | 노출 기간(`starts_at ≤ 지금 < ends_at`, NULL은 제한 없음) 안의 배너를 `sort_order` 순으로 최대 6개 | 1 | `idx_banners_order` |
+| `GET /api/notices?category&page&size` | 고정 먼저, 그다음 게시 시각 최신순(같으면 id 큰 순). 게시 시각이 지난 것만 | 2(개수 + 쪽) | `idx_notices_list` / `idx_notices_category` |
+| `GET /api/notices/:id` | 본문(일반 텍스트 그대로, HTML로 해석하지 않음). 게시 전·없음 → `404 NOTICE_NOT_FOUND` | 1 | PK |
+| `GET /api/rankings?genre&period` | 기간(`DAILY` 24시간·`WEEKLY` 7일(기본)·`ALL`) 안에 **확정된 예매의 좌석 수**(취소 제외)로 순위, 최대 20개. `share` = 같은 조건(장르·기간) 전체 판매 좌석에 대한 %(소수 첫째 자리, 반올림) | 4(판매 집계 + 목록용 공연·등급·회차 집계) | `idx_reservations_status_created(status, created_at, performance_id)` |
+| `GET /api/performances/:id/layout` | 좌석 배치 미리보기. **판매·선점 상태와 좌석 id를 담지 않는다**(쿼리가 `status`를 읽지 않음, Redis를 부르지 않음) → 대기열을 거치지 않고 볼 수 있다 | 3(회차, 등급, 좌석 칸) | PK / `uk_seats_position` |
+| `GET /api/shows`, `/api/shows/:id` | `tagline`·`region`·`createdAt`(상세는 `venueInfo{name, region, seatCount}` = 회차 하나의 좌석 수) 추가. 목록에 `region=`(정확히 일치, 10자 이내) | v3와 같음 | `idx_shows_region` |
+| `POST /api/reservations` | body `paymentMethod?: CARD｜EASY_PAY｜BANK_TRANSFER`(없거나 null이면 `CARD`). 정의되지 않은 값·소문자·숫자(`0`)·객체는 `400 VALIDATION_ERROR`. 응답·내 예매·취소 응답의 `Reservation`에 `paymentMethod` | v3와 같음 | — |
+
+- 새 GET은 모두 로그인·토큰이 필요 없고 **MySQL만** 씁니다(Redis가 죽어도 동작). 요청 제한은 general 버킷(IP당 분당 120). 정의되지 않은 쿼리 파라미터는 `/api/shows`처럼 400입니다(`/api/banners`는 파라미터를 받지 않음). 응답 헤더(`Cache-Control: no-store` 등)는 v3와 같습니다.
+- 결제는 모의 결제입니다. 고른 수단의 이름만 `reservations.payment_method`에 기록하고 결제 정보는 받지 않습니다. 같은 `Idempotency-Key` 재전송은 처음 응답(처음 고른 수단)을 그대로 돌려줍니다.
+- 스키마 `V4__api_v4_content_ranking_payment.sql`: `shows.tagline VARCHAR(30)`·`shows.region VARCHAR(10)`(+`idx_shows_region`), `reservations.payment_method`(기본 `CARD`, CHECK 3종, 기존 예매는 `CARD`) + `idx_reservations_status_created`, 새 테이블 `banners`(slug 유니크, `show_id` FK, 노출 기간, `image_url`은 `/`로 시작하는 프론트 경로만 CHECK), `notices`(slug 유니크, 분류 CHECK, `show_id` FK NULL 가능).
+- **시드**(재실행해도 slug 기준 upsert라 중복 없음, 문구는 모두 새로 씀):
+  - 배너 6개: 공연 15, 4, 1, 6, 8, 12 순서. `imageUrl` = `/banners/banner-{showId}.webp`, `mobileImageUrl` = null, 노출은 그 공연의 마지막 회차 시작까지.
+  - 공지 6건: 오픈 예정 공연(6·9·11)마다 `TICKET_OPEN` 1건(공연 연결, 오픈 일시 = 판매 시작 시각) + `SERVICE` 3건(대기열 이용 방법[고정], 결제 수단 안내, 로그인 제한 안내).
+  - 공연 18개 모두 `tagline`(30자 이내)과 `region`. 지역은 가상 공연장마다 고정: **서울 7(누리 아트홀·별무리 라이브홀·온새미로 극장·나래 소극장), 경기 6(다온 아트센터 대극장·별빛 씨어터·하늘결 체임버홀), 대구 3(모퉁이 극장·미리내 콘서트홀), 부산 2(물결 야외극장·소금꽃 소극장)**.
+  - 시드 예매 시각을 "판매 시작 ~ 지금"(최대 14일)에 흩어 놓아 기간별 랭킹이 달라집니다(공연마다 최근에 몰리는 정도가 다름). **새 DB에만 적용**됩니다(이미 좌석이 있는 회차에는 시드 예매를 새로 만들지 않으므로 기존 DB의 시드 예매는 모두 "그때의 지금" 시각이고, 기간별 결과가 비슷하게 나올 수 있음).
+- v3의 `ShowSummary.rank`와 `GET /api/shows?sort=ranking`은 그대로(전체 기간 판매 기준)입니다.
 
 ### v2 → v3에서 바뀐 것
 - **회원가입·로그인·로그아웃**(`/api/auth/*`)과 **내 예매**(`GET /api/me/reservations`, `POST /api/me/reservations/:code/cancel`) 추가.
@@ -174,9 +196,9 @@ docker compose -f docker-compose.dev.yml down      # 데이터 볼륨까지 지�
 
 | 종류 | 위치 | 실행 단계 | 필요한 것 |
 |---|---|---|---|
-| 서비스 단위 테스트 | `AuthServiceTest`, `SessionAndCsrfTest`, `ShowServiceTest`, `QueueServiceTest`, `SeatServiceTest`, `ReservationServiceTest`, `VenueLayoutTest`, `EmailPrivacyAndCodeTest` | `test` | 없음(가짜 저장소 주입) |
+| 서비스 단위 테스트 | `RankingAndV4FieldsTest`(v4), `ContentServiceTest`(v4), `SeedSpreadTest`(v4), `AuthServiceTest`, `SessionAndCsrfTest`, `ShowServiceTest`, `QueueServiceTest`, `SeatServiceTest`, `ReservationServiceTest`, `VenueLayoutTest`, `EmailPrivacyAndCodeTest` | `test` | 없음(가짜 저장소 주입) |
 | HTTP 계층 테스트 | `ApiWebTest` (MockMvc, 세션은 MockHttpSession) | `test` | 없음 |
-| 통합 테스트 | `it/AuthSessionIT`, `it/RedisLossIT`, `it/RedisDownIT`, `it/SessionCleanupIT`, `it/SeatConcurrencyIT`, `it/QueueIT`, `migrate/SeedIdContinuityIT` | `verify` | 실제 MySQL·Redis (`RedisDownIT`는 `redis-server` 실행 파일도, 없으면 건너뜀) |
+| 통합 테스트 | `it/V4ApiIT`(v4), `migrate/SeedV4IT`(v4), `it/RedisPauseIT`, `it/AuthSessionIT`, `it/RedisLossIT`, `it/RedisDownIT`, `it/SessionCleanupIT`, `it/SeatConcurrencyIT`, `it/QueueIT`, `migrate/SeedIdContinuityIT` | `verify` | 실제 MySQL·Redis (`RedisDownIT`는 `redis-server` 실행 파일도, 없으면 건너뜀) |
 
 통합 테스트가 확인하는 것(실제 MySQL·Redis·Lua·HTTP):
 1. **애플리케이션 인스턴스 2개**(같은 DB)를 띄우고, 인스턴스 1에서 받은 세션 쿠키를 인스턴스 2에 보내도 **로그인이 유지된다**. 세션은 `SPRING_SESSION` 1행 + 속성 2행(uid, csrf)이고 Redis에는 세션 키가 없다. 유휴 만료 1800초. 다른 인스턴스에서 로그아웃해도 세션 행과 속성 행이 지워진다.
@@ -188,7 +210,7 @@ docker compose -f docker-compose.dev.yml down      # 데이터 볼륨까지 지�
 7. 로그인 5회 연속 실패 → **429 `ACCOUNT_LOCKED` + `Retry-After`**(두 인스턴스로 나눠 실패해도 `users` 열에서 합산). 없는 이메일과 틀린 비밀번호의 응답이 같다.
 8. **Redis를 통째로 비우면**(`RedisLossIT`, 장애 전환과 같은 상황): 로그인·CSRF 유지 / 선점 중이던 확정은 `409 HOLD_EXPIRED`, 좌석 조회는 `401 QUEUE_TOKEN_INVALID`, 다른 사람이 그 좌석을 사고 판매는 1건 / 팔린 좌석은 비운 뒤에도 `SEAT_TAKEN`, 옛 선점이 되살아나도(덤프 복원) DB가 두 번째 판매를 막음 / 대기자는 401 후 다시 진입 / 로그인 잠금은 유지, 잠금 시각이 지나면 풀리고 다음 실패는 1부터.
 9. **Redis를 멈추면**(`RedisDownIT`, 테스트 전용 `redis-server`를 껐다 켬): 공연 목록·상세, `/auth/me`, 로그인(없는 이메일은 401), 가입, 내 예매 조회·취소, `/readyz`(redis: down) = 정상 / 대기열 진입·상태·이탈, 좌석, 선점, 확정 = `503 SERVICE_UNAVAILABLE` + `Retry-After: 5`, 응답에 내부 정보 없음, 실측 8ms / Redis를 다시 켜면 **서버 재시작 없이** 진입 200.
-10. **만료 세션 정리를 두 서버가 동시에**(`SessionCleanupIT`): 만료 1300개 + 유효 20개 → 예외 없이 만료 세션과 속성만 지워짐(실측 707건 / 593건으로 나눠 가져감).
+10. **만료 세션 정리를 두 서버가 동시에**(`SessionCleanupIT`, 5번 반복): 만료 1100개 + 유효 20개를 두 정리 작업이 같은 순간 시작 → 매번 만료 세션과 속성만 모두 지워지고 유효 세션은 남음. 5번 중 4번은 InnoDB가 한쪽을 교착으로 되돌렸고(외래 키 연쇄 삭제의 간격 잠금), 그 배치를 다시 시도해 끝까지 지웠다(재시도 각 1번).
 11. (v2부터) 같은 좌석 동시 선점 50건 → 1건만 성공 / Redis 선점 키를 지운 뒤 두 계정이 같은 좌석 확정 → DB에서 1건만 / `QUEUE_MAX_ACTIVE=2`에서 5명 진입 → 완료·이탈마다 대기 1번 승격 / 입장 전 토큰 403, 남의 토큰 401.
 12. **Redis가 잠시 멈췄다가 같은 데이터로 돌아오면**(`RedisPauseIT`, 전용 `redis-server`를 `SIGSTOP` 45초 → `SIGCONT`, 운영 기본 대기 TTL 30초): 대기자는 줄에 남고(순번 그대로), 입장자도 유지, 유예(30초)가 끝난 뒤 폴링을 멈춘 사람만 401. 약 90초 걸림.
 
@@ -268,16 +290,17 @@ backend/
    │  ├─ auth/          가입·로그인(AuthService), 세션 읽고 쓰기(SessionAuth), @CurrentUser, CsrfFilter, 사용자 저장소(잠금 열 포함),
    │  │                 next: SessionConfig(Spring Session JDBC 조립), ThrottledSessionRepository(쓰기 줄이기),
    │  │                 SessionTransactions(조회는 트랜잭션 없이), SessionCleanup(만료 세션 정리, SKIP LOCKED)
-   │  ├─ show/          공연 목록·상세: controller → service → repository(JDBC), 상태 규칙(SaleStatus)
+   │  ├─ show/          공연 목록·상세: controller → service → repository(JDBC), 상태 규칙(SaleStatus), v4 랭킹(RankingController)
+   │  ├─ content/       v4 배너·공지: controller → service → repository(JDBC)
    │  ├─ queue/         대기열: QueueService → QueueStore(Redis Lua), 토큰 생성, Redis 키 이름
    │  ├─ seat/          좌석 화면·선점: SeatService → SeatRepository(JDBC) + HoldStore(Redis Lua)
    │  ├─ reservation/   확정·내 예매·취소, 멱등 저장소(Redis), 예매번호, 이메일 해시·마스킹
    │  ├─ ratelimit/     Redis 고정 창 카운터
    │  ├─ health/        /healthz, /readyz
-   │  └─ migrate/       시드·공연장 배치 템플릿(migrate 프로필에서만 로드)
+   │  └─ migrate/       시드·공연장 배치 템플릿(migrate 프로필에서만 로드), v4 문구(ContentSeed: 한 줄 소개·지역·배너·공지)
    ├─ main/resources/
    │  ├─ application.yml, application-migrate.yml
-   │  ├─ db/migration/V1__init.sql, V2__users_and_reservation_owner.sql, V3__db_sessions_and_login_lock.sql   (Flyway)
+   │  ├─ db/migration/V1__init.sql, V2__users_and_reservation_owner.sql, V3__db_sessions_and_login_lock.sql, V4__api_v4_content_ranking_payment.sql (Flyway)
    │  └─ redis/*.lua    queue-common/enter/poll/peek/leave, hold-create/release, login-failure(없는 이메일만), rate-limit
    └─ test/java/com/ticketing/
       ├─ support/       InMemoryStore(가짜 저장소), TestApp(서비스 조립)
@@ -370,7 +393,7 @@ SPRING_SESSION (세션 1행: SESSION_ID 유니크, 시각은 epoch ms) ── SP
 
 **만료 세션 정리 — 돌지 않아도 틀리지 않고, 여러 서버가 동시에 돌려도 안전**(`SessionCleanup`):
 - 정합성은 정리 작업에 기대지 않습니다. 만료된 세션은 읽을 때 Spring Session이 만료로 판단해 지우고 새 세션으로 처리합니다. 정리는 테이블이 커지지 않게 하는 청소입니다(Spring Session 자체 정리 작업은 끔).
-- 모든 서버가 `SESSION_CLEANUP_SECONDS`(5분)마다 돌립니다. 한 번에 500행씩 `SELECT … WHERE EXPIRY_TIME < (DB 시각) ORDER BY EXPIRY_TIME LIMIT 500 FOR UPDATE SKIP LOCKED` → 그 행만 `DELETE`. 다른 서버가 잡은 행은 건너뛰므로 **서로 기다리지 않고**, READ COMMITTED라 범위 잠금이 없어 정리 중에도 새 세션 `INSERT`가 막히지 않습니다. 잠금 순서는 세션 행 → 속성 행(CASCADE)으로 요청의 저장 순서와 같습니다. 같은 행을 두 번 지우려 해도 결과가 같습니다(멱등). 실측: 두 정리 작업을 동시에 시작 → 만료 1300행을 707/593으로 나눠 지움, 오류 0(통합 테스트 10번).
+- 모든 서버가 `SESSION_CLEANUP_SECONDS`(5분)마다 돌립니다. 한 번에 500행씩 `SELECT … WHERE EXPIRY_TIME < (DB 시각) ORDER BY EXPIRY_TIME LIMIT 500 FOR UPDATE SKIP LOCKED` → 그 행만 `DELETE`. 다른 서버가 잡은 행은 건너뛰므로 같은 행을 두고 기다리지 않고, READ COMMITTED라 부모 테이블에 범위 잠금이 없어 정리 중에도 새 세션 `INSERT`가 막히지 않습니다. **다만** 속성 테이블의 `ON DELETE CASCADE`는 READ COMMITTED에서도 외래 키용 간격 잠금을 쓰므로, 두 서버의 배치가 같은 순간 겹치면 InnoDB가 한쪽을 교착으로 되돌립니다(실측: 동시에 시작한 5번 중 4번). 되돌린 쪽은 아무것도 지우지 않았고 지우기는 멱등이라 **그 배치만 20~100ms 쉬었다가 다시 시도**합니다(최대 5번, 그래도 안 되면 다음 주기). 결과(만료 세션만 모두 삭제)는 매번 같았습니다(통합 테스트 10번). 운영에서는 서버마다 기동 시각이 달라 동시에 겹치는 일은 드뭅니다.
 
 **JWT와의 비교 — 왜 JWT가 아닌가**
 
@@ -579,6 +602,13 @@ v3에서 Spring Session·spring-security-crypto가 늘었지만 의존성 레이
 - **next: 프론트 수정은 필요 없습니다**(계약 v3 그대로). 다만 다음 두 가지가 새로 나올 수 있습니다.
   - `503 SERVICE_UNAVAILABLE`(+ `Retry-After: 5`): Redis 장애로 예매 진행(대기열·좌석·선점·확정)만 잠시 안 될 때. 지금 화면은 5xx를 "다시 시도할 수 있는 오류"로 보여 주므로 그대로 동작합니다. 둘러보기·로그인·내 예매는 영향이 없습니다.
   - 장애 전환·Redis 재시작 직후 확정은 `409 HOLD_EXPIRED`(좌석 화면으로), 대기·좌석 화면은 `401 QUEUE_TOKEN_INVALID`(다시 줄 서기)가 됩니다. 로그인은 유지됩니다.
+- **v4 세부(프론트가 알 것)**
+  - **공지 페이지 번호**: `page`는 **1부터**(기본 1), `size` 기본 20·최대 50. `page`·`size`가 0 이하·숫자 아님·범위 밖이면 `400 VALIDATION_ERROR`(details의 field가 `page`·`size`·`category`). 마지막 쪽을 넘긴 `page`는 400이 아니라 **빈 `notices`와 실제 `totalPages`·`totalCount`**를 돌려줍니다.
+  - **빈 결과 형태**: 공지가 없으면 `{ notices: [], page: 1, totalPages: 0, totalCount: 0 }`. 배너가 없으면 `{ banners: [] }`. 랭킹에 판매가 없으면 `{ rankedAt, period, items: [] }`.
+  - **랭킹**: 그 기간·장르에 **판매가 0인 공연은 `items`에 없습니다**(순위·점유율 0으로 넣지 않음). 동률은 공연 id 오름차순이고 `rank`는 1부터 빈틈없이 매깁니다(동률도 다른 번호). `share`는 반올림 때문에 합이 정확히 100.0이 아닐 수 있고, 21위 이하가 잘리면 합이 100보다 작습니다. `items[].show`는 목록과 같은 `ShowSummary`이고 그 안의 `rank`는 v3 그대로 **전체 기간** 순위라 랭킹 화면의 `rank`와 다를 수 있습니다. `rankedAt`은 계산한 서버 시각입니다.
+  - **좌석 배치**: `GET /api/performances/:id/layout`의 `seats[]`는 `{row, number, grade}`만 있고 좌석 `id`·상태가 없습니다(미리보기 전용. 선택은 대기열 입장 뒤 `/seats`로).
+  - **`paymentMethod`**: 안 보내면 `CARD`. 대문자 이름만 받습니다(`"easy_pay"`는 400).
+  - **`createdAt`**(공연 등록 시각)은 DB에 공연 행이 생긴 시각입니다. 시드 공연은 처음 migrate한 시각이라 모두 비슷합니다.
 - **세션 쿠키** `TKT_SESSION`(HttpOnly라 JS에서 안 보임). 같은 출처(`/api`)로 부르면 브라우저가 알아서 보냅니다. `fetch`는 기본값(`credentials: "same-origin"`)이면 됩니다.
 - **CSRF 토큰(`csrfToken`)이 바뀌는 시점**: ① 앱 시작 시 `GET /api/auth/me`로 받음(익명이어도 줌) ② **가입·로그인 성공 응답에 새 토큰** → 반드시 교체 ③ **로그아웃 후**에는 세션이 사라지므로 `GET /api/auth/me`를 다시 불러 새 토큰을 받아야 함 ④ 세션 만료 후에도 같음. `GET`·`HEAD` 외 모든 `/api` 요청에 `X-CSRF-Token` 헤더(로그아웃·대기열 이탈·선점 해제·취소 포함).
 - **세션 만료(유휴 30분) 시 응답**: 로그인 필요한 `GET`(내 예매·좌석 조회·대기 상태)은 **`401 UNAUTHENTICATED`**, 상태 변경 요청은 세션이 없어 토큰 비교가 먼저 실패하므로 **`403 CSRF_INVALID`**. 두 경우 모두 `GET /api/auth/me` → `user: null`이면 로그인 화면으로 보내면 됩니다(`csrfToken`도 새로 받음).

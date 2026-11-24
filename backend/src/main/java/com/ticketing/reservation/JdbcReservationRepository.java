@@ -23,7 +23,7 @@ import com.ticketing.seat.SeatRepository;
 public class JdbcReservationRepository implements ReservationRepository {
 
     private static final String SELECT = """
-            SELECT r.id, r.code, r.performance_id, p.starts_at, s.id AS show_id, s.title, s.venue, r.total_price,
+            SELECT r.id, r.code, r.performance_id, p.starts_at, s.id AS show_id, s.title, s.venue, r.total_price, r.payment_method,
                    r.name, r.email_hash, r.email_masked, r.status, r.created_at, r.cancelled_at
               FROM reservations r
               JOIN performances p ON p.id = r.performance_id
@@ -43,14 +43,16 @@ public class JdbcReservationRepository implements ReservationRepository {
         KeyHolder keys = new GeneratedKeyHolder();
         jdbc.sql("""
                         INSERT INTO reservations
-                               (code, performance_id, user_id, total_price, name, email_hash, email_masked, status, created_at)
-                        VALUES (:code, :performanceId, :userId, :totalPrice, :name, :emailHash, :emailMasked, 'CONFIRMED',
+                               (code, performance_id, user_id, total_price, payment_method, name, email_hash, email_masked, status,
+                                created_at)
+                        VALUES (:code, :performanceId, :userId, :totalPrice, :paymentMethod, :name, :emailHash, :emailMasked, 'CONFIRMED',
                                 :createdAt)
                         """)
                 .param("code", r.code())
                 .param("performanceId", r.performanceId())
                 .param("userId", r.userId())
                 .param("totalPrice", r.totalPrice())
+                .param("paymentMethod", r.paymentMethod().name())
                 .param("name", r.name())
                 .param("emailHash", r.emailHash())
                 .param("emailMasked", r.emailMasked())
@@ -137,6 +139,7 @@ public class JdbcReservationRepository implements ReservationRepository {
                 rs.getString("title"),
                 rs.getString("venue"),
                 rs.getInt("total_price"),
+                PaymentMethod.valueOf(rs.getString("payment_method")),
                 rs.getString("name"),
                 rs.getString("email_hash"),
                 rs.getString("email_masked"),

@@ -19,8 +19,10 @@ public final class ShowViews {
     public record ShowSummary(
             long id,
             String title,
+            String tagline,
             Genre genre,
             String venue,
+            String region,
             Instant firstStartsAt,
             Instant lastStartsAt,
             Instant saleOpensAt,
@@ -30,7 +32,8 @@ public final class ShowViews {
             int remainingSeats,
             int totalSeats,
             Integer rank,
-            Poster poster) {
+            Poster poster,
+            Instant createdAt) {
     }
 
     public record GradeRemaining(String grade, int remaining, int total) {
@@ -43,8 +46,10 @@ public final class ShowViews {
     public record ShowDetail(
             long id,
             String title,
+            String tagline,
             Genre genre,
             String venue,
+            String region,
             Instant firstStartsAt,
             Instant lastStartsAt,
             Instant saleOpensAt,
@@ -55,6 +60,7 @@ public final class ShowViews {
             int totalSeats,
             Integer rank,
             Poster poster,
+            Instant createdAt,
             String ageRating,
             int runningMinutes,
             List<String> cast,
@@ -62,7 +68,19 @@ public final class ShowViews {
             List<String> notices,
             int maxSeatsPerBooking,
             List<Grade> grades,
-            List<PerformanceSummary> performances) {
+            List<PerformanceSummary> performances,
+            VenueInfo venueInfo) {
+    }
+
+    /** v4: seatCount = 회차 하나의 좌석 수. */
+    public record VenueInfo(String name, String region, int seatCount) {
+    }
+
+    /** v4 랭킹. share = 같은 조건(장르·기간) 전체 판매 좌석 수에 대한 비율(%), 소수 첫째 자리. */
+    public record RankingItem(int rank, ShowSummary show, double share) {
+    }
+
+    public record Rankings(Instant rankedAt, RankingPeriod period, List<RankingItem> items) {
     }
 
     public record ShowListResponse(List<ShowSummary> shows) {

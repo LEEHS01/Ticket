@@ -85,6 +85,22 @@ public class SeatService {
                 grades, rowLabels, perf.seatsPerRow(), perf.aisleAfter(), out, mine.map(HoldView::of).orElse(null));
     }
 
+    /** v4 좌석 배치 미리보기(로그인·대기열 불필요). 판매·선점 여부는 포함하지 않는다. */
+    public SeatViews.SeatLayout layout(long performanceId) {
+        PerformanceInfo perf = performance(performanceId);
+        List<Grade> grades = shows.findGrades(List.of(perf.showId())).stream()
+                .map(g -> new Grade(g.code(), g.name(), g.price())).toList();
+        List<String> rowLabels = new ArrayList<>();
+        for (int i = 0; i < perf.seatRows(); i++) {
+            rowLabels.add(rowLabel(i));
+        }
+        List<SeatViews.LayoutSeat> cells = seats.findLayout(performanceId).stream()
+                .map(s -> new SeatViews.LayoutSeat(s.row(), s.number(), s.grade())).toList();
+        return new SeatViews.SeatLayout(
+                new SeatViews.PerformanceRef(perf.id(), perf.showId(), perf.showTitle(), perf.venue(), perf.startsAt()),
+                grades, rowLabels, perf.seatsPerRow(), perf.aisleAfter(), cells);
+    }
+
     public HoldView hold(long userId, String token, long performanceId, List<Long> seatIds) {
         PerformanceInfo perf = performance(performanceId);
         QueueStore.TokenState admitted = queue.requireAdmitted(userId, token, performanceId);

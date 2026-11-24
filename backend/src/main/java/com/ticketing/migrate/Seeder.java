@@ -1,6 +1,7 @@
 package com.ticketing.migrate;
 
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -210,7 +211,8 @@ public class Seeder {
                     List.of(new SeedPerf(5, t(14, 0), 0.55), new SeedPerf(6, t(11, 0), 0.3),
                             new SeedPerf(6, t(14, 0), 0.6)), 110));
 
-    public record Result(int shows, int performances, int newSeats, int newSeedReservations, boolean demoAccount) {
+    public record Result(int shows, int performances, int newSeats, int newSeedReservations, boolean demoAccount,
+                         int banners, int notices) {
     }
 
     /** V2 마이그레이션이 만든 로그인 불가 시드 계정. 미리 판매된 좌석은 이 계정 소유다. */
@@ -257,12 +259,13 @@ public class Seeder {
         for (int i = 0; i < SHOWS.size(); i++) {
             SeedShow show = SHOWS.get(i);
             int showIndex = i;
-            int[] counts = tx.inTransaction(() -> seedShow(showIndex, show, today));
+            int[] counts = tx.inTransaction(() -> seedShow(showIndex, show, today, now));
             performances += show.performances().size();
             newSeats += counts[0];
             newReservations += counts[1];
         }
-        return new Result(SHOWS.size(), performances, newSeats, newReservations, demo);
+        int[] content = tx.inTransaction(() -> seedContent(today, now));
+        return new Result(SHOWS.size(), performances, newSeats, newReservations, demo, content[0], content[1]);
     }
 
     /**
@@ -281,10 +284,10 @@ public class Seeder {
         try {
             KeyHolder keys = new GeneratedKeyHolder();
             showParams(jdbc.sql("""
-                            INSERT INTO shows (slug, title, genre, venue, sale_opens_at, age_rating, running_minutes,
+                            INSERT INTO shows (slug, title, tagline, genre, venue, region, sale_opens_at, age_rating, running_minutes,
                                                cast_members, description, notices, poster_seed, poster_hue,
                                                seat_rows, seats_per_row, aisle_after)
-                            VALUES (:slug, :title, :genre, :venue, :opens, :age, :running,
+                            VALUES (:slug, :title, :tagline, :genre, :venue, :region, :opens, :age, :running,
                                     :cast, :description, :notices, :seed, :hue, :rows, :perRow, :aisle)
                             """), showIndex, s, saleOpensAt)
                     .param("slug", s.slug())
@@ -304,7 +307,8 @@ public class Seeder {
     private void updateShow(long id, int showIndex, SeedShow s, Instant saleOpensAt) {
         showParams(jdbc.sql("""
                         UPDATE shows
-                           SET title = :title, genre = :genre, venue = :venue, sale_opens_at = :opens,
+                           SET title = :title, tagline = :tagline, genre = :genre, venue = :venue, region = :region,
+                               sale_opens_at = :opens,
                                age_rating = :age, running_minutes = :running, cast_members = :cast,
                                description = :description, notices = :notices, poster_seed = :seed, poster_hue = :hue
                          WHERE id = :id
@@ -316,6 +320,8 @@ public class Seeder {
     private JdbcClient.StatementSpec showParams(JdbcClient.StatementSpec spec, int showIndex, SeedShow s,
             Instant saleOpensAt) {
         return spec.param("title", s.title()).param("genre", s.genre().name())
+                .param("tagline", ContentSeed.TAGLINES.getOrDefault(s.slug(), ""))
+                .param("region", ContentSeed.region(s.venue()))
                 .param("venue", s.venue()).param("opens", Timestamp.from(saleOpensAt)).param("age", s.ageRating())
                 .param("running", s.runningMinutes()).param("cast", toJson(s.cast()))
                 .param("description", s.description()).param("notices", toJson(COMMON_NOTICES))
@@ -348,7 +354,7 @@ public class Seeder {
         return next;
     }
 
-    private int[] seedShow(int showIndex, SeedShow s, LocalDate today) {
+    private int[] seedShow(int showIndex, SeedShow s, LocalDate today, Instant now) {
         Instant saleOpensAt = at(today, s.saleOpensDay(), s.saleOpensTime());
         long showId = upsertShow(showIndex, s, saleOpensAt);
 
@@ -381,7 +387,7 @@ public class Seeder {
                 continue; // 이미 만든 회차: 좌석·판매 상태(실제 예매 포함)를 건드리지 않는다
             }
             newSeats += insertSeats(perfId, s);
-            newReservations += preSell(showIndex, p, perfId, showId, perf.soldRatio(), Instant.now());
+            newReservations += preSell(showIndex, p, perfId, showId, perf.soldRatio(), saleOpensAt, now);
         }
         return new int[] {newSeats, newReservations};
     }
@@ -414,7 +420,8 @@ public class Seeder {
     }
 
     /** 랭킹·매진 상태가 비지 않도록 일부 좌석을 시드 예매(최대 4석씩)로 판매 처리. 결정적 난수라 매번 같은 좌석. */
-    private int preSell(int showIndex, int perfIndex, long perfId, long showId, double ratio, Instant now) {
+    private int preSell(int showIndex, int perfIndex, long perfId, long showId, double ratio, Instant saleOpensAt,
+            Instant now) {
         if (ratio <= 0) {
             return 0;
         }
@@ -430,8 +437,10 @@ public class Seeder {
         int toSell = (int) Math.round(seats.size() * Math.min(1.0, ratio));
         List<long[]> sold = shuffled.subList(0, toSell);
 
+        Random times = new Random(showIndex * 1_000L + perfIndex * 10L + 7);
         int reservationsMade = 0;
         for (int i = 0; i < sold.size(); i += 4) {
+            Instant createdAt = spreadCreatedAt(showIndex, saleOpensAt, now, times);
             List<long[]> group = sold.subList(i, Math.min(i + 4, sold.size()));
             String code = seedCode(showIndex, perfIndex, reservationsMade);
             int total = group.stream().mapToInt(x -> (int) x[1]).sum();
@@ -442,7 +451,7 @@ public class Seeder {
                             """)
                     .param("code", code).param("p", perfId).param("uid", seedUserId).param("total", total).param("name", SEED_NAME)
                     .param("hash", EmailPrivacy.hash(SEED_EMAIL)).param("masked", EmailPrivacy.mask(SEED_EMAIL))
-                    .param("at", Timestamp.from(now)).update();
+                    .param("at", Timestamp.from(createdAt)).update();
             long rid = jdbc.sql("SELECT id FROM reservations WHERE code = :code").param("code", code)
                     .query(Long.class).single();
             List<Long> ids = group.stream().map(x -> x[0]).toList();
@@ -454,6 +463,88 @@ public class Seeder {
             reservationsMade++;
         }
         return reservationsMade;
+    }
+
+    /**
+     * v4: 시드 예매 시각을 "판매 시작 ~ 지금"(최대 14일)에 흩어 놓는다 → 랭킹이 기간(24시간·7일·전체)에 따라 달라진다.
+     * 공연마다 최근에 몰리는 정도(지수 k)를 다르게 해 순위가 바뀌게 한다. 결정적 난수라 새 DB마다 같은 결과.
+     * 이미 좌석이 있는 회차(기존 DB)에는 시드 예매를 새로 만들지 않으므로 기존 시드 예매 시각은 바뀌지 않는다.
+     */
+    static Instant spreadCreatedAt(int showIndex, Instant saleOpensAt, Instant now, Random rnd) {
+        Instant from = saleOpensAt.isAfter(now.minus(Duration.ofDays(14))) ? saleOpensAt : now.minus(Duration.ofDays(14));
+        long span = Math.max(0, Duration.between(from, now.minusSeconds(60)).toSeconds());
+        double k = 0.35 + (showIndex * 7 % 10) * 0.3; // 0.35(오래전에 몰림) ~ 3.05(최근에 몰림)
+        double age = Math.pow(rnd.nextDouble(), k) * span;
+        return now.minusSeconds(60 + (long) age);
+    }
+
+    /**
+     * v4 배너·공지 upsert(slug 기준, 재실행해도 중복 없음). 시각은 실행 시각 기준이라 다시 돌리면 함께 갱신된다.
+     * 배너 노출 기간: 시작 제한 없음 ~ 그 공연의 마지막 회차 시작까지. 반환: {배너 수, 공지 수}
+     */
+    private int[] seedContent(LocalDate today, Instant now) {
+        int banners = 0;
+        for (int i = 0; i < ContentSeed.BANNERS.size(); i++) {
+            ContentSeed.SeedBanner b = ContentSeed.BANNERS.get(i);
+            long showId = showIdOf(b.showSlug());
+            Instant endsAt = lastPerformanceAt(b.showSlug(), today);
+            jdbc.sql("""
+                            INSERT INTO banners (slug, show_id, eyebrow, title, subtitle, image_url, mobile_image_url,
+                                                 sort_order, starts_at, ends_at)
+                            VALUES (:slug, :show, :eyebrow, :title, :subtitle, :image, NULL, :ord, NULL, :ends) AS new
+                            ON DUPLICATE KEY UPDATE show_id = new.show_id, eyebrow = new.eyebrow, title = new.title,
+                                subtitle = new.subtitle, image_url = new.image_url, sort_order = new.sort_order,
+                                starts_at = new.starts_at, ends_at = new.ends_at
+                            """)
+                    .param("slug", "seed-" + b.showSlug()).param("show", showId).param("eyebrow", b.eyebrow())
+                    .param("title", b.title()).param("subtitle", b.subtitle())
+                    .param("image", "/banners/banner-" + showId + ".webp").param("ord", i)
+                    .param("ends", endsAt == null ? null : Timestamp.from(endsAt)).update();
+            banners++;
+        }
+        int notices = 0;
+        for (int i = 0; i < SHOWS.size(); i++) {
+            SeedShow s = SHOWS.get(i);
+            if (s.saleOpensDay() <= 0) {
+                continue; // 오픈 예정 공연만
+            }
+            Instant opensAt = at(today, s.saleOpensDay(), s.saleOpensTime());
+            upsertNotice("ticket-open-" + s.slug(), "TICKET_OPEN", ContentSeed.ticketOpenTitle(s.title()),
+                    ContentSeed.ticketOpenBody(s.title(), s.venue(), s.ageRating(), opensAt), false,
+                    now.minus(Duration.ofHours(6 + i)), opensAt, showIdOf(s.slug()));
+            notices++;
+        }
+        for (ContentSeed.SeedNotice n : ContentSeed.SERVICE_NOTICES) {
+            upsertNotice(n.slug(), "SERVICE", n.title(), n.body(), n.pinned(),
+                    now.minus(Duration.ofDays(n.publishedDaysAgo())), null, null);
+            notices++;
+        }
+        return new int[] {banners, notices};
+    }
+
+    private void upsertNotice(String slug, String category, String title, String body, boolean pinned,
+            Instant publishedAt, Instant ticketOpenAt, Long showId) {
+        jdbc.sql("""
+                        INSERT INTO notices (slug, category, title, body, pinned, published_at, ticket_open_at, show_id)
+                        VALUES (:slug, :category, :title, :body, :pinned, :published, :open, :show) AS new
+                        ON DUPLICATE KEY UPDATE category = new.category, title = new.title, body = new.body,
+                            pinned = new.pinned, published_at = new.published_at, ticket_open_at = new.ticket_open_at,
+                            show_id = new.show_id
+                        """)
+                .param("slug", slug).param("category", category).param("title", title).param("body", body)
+                .param("pinned", pinned).param("published", Timestamp.from(publishedAt))
+                .param("open", ticketOpenAt == null ? null : Timestamp.from(ticketOpenAt)).param("show", showId)
+                .update();
+    }
+
+    private long showIdOf(String slug) {
+        return jdbc.sql("SELECT id FROM shows WHERE slug = :s").param("s", slug).query(Long.class).single();
+    }
+
+    private Instant lastPerformanceAt(String slug, LocalDate today) {
+        return SHOWS.stream().filter(s -> s.slug().equals(slug)).findFirst()
+                .flatMap(s -> s.performances().stream().map(p -> at(today, p.day(), p.time())).max(Instant::compareTo))
+                .orElse(null);
     }
 
     private static Instant at(LocalDate today, int dayOffset, LocalTime time) {
