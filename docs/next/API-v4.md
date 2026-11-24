@@ -91,6 +91,12 @@ type Reservation = /* v3 */ & { paymentMethod: PaymentMethod };
 - 랭킹의 판매량은 기간 안에 확정된 예매의 좌석 수(취소 제외)다. `DAILY`는 최근 24시간, `WEEKLY`는 최근 7일, `ALL`은 전체. `share`는 같은 조건(장르·기간)의 전체 판매 좌석 수에 대한 비율이다.
 - `GET /api/performances/:id/layout`은 좌석 상태를 주지 않으므로 대기열 토큰이 필요 없다. 판매·선점 여부가 새어 나가면 안 된다.
 - v3의 `ShowSummary.rank`와 `GET /api/shows?sort=ranking`은 그대로 둔다(전체 기간 기준).
+- 랭킹의 `rank`는 1부터 빈틈없이 매긴다. 판매량이 같으면 공연 id가 작은 쪽이 앞이고, 동률도 서로 다른 번호를 받는다. `share`는 소수 첫째 자리로 반올림하므로 합이 정확히 100.0이 아닐 수 있다. `items[].show.rank`는 전체 기간 순위라 랭킹의 `rank`와 다를 수 있다.
+- 공지 목록은 `page`가 마지막 쪽을 넘으면 오류가 아니라 빈 `notices`와 실제 `totalPages`를 준다. `page`·`size`가 0 이하이거나 숫자가 아니면 `400 VALIDATION_ERROR`.
+- 게시 시각(`publishedAt`)이 아직 오지 않은 공지는 목록에 없고 상세도 `404 NOTICE_NOT_FOUND`다.
+- 빈 결과의 형태: 배너 `{ banners: [] }`, 공지 `{ notices: [], page: 1, totalPages: 0, totalCount: 0 }`, 랭킹 `{ rankedAt, period, items: [] }`.
+- 새 조회 엔드포인트는 정의되지 않은 쿼리 파라미터를 받으면 `400 VALIDATION_ERROR`를 준다.
+- `SeatLayout.seats[]`에는 좌석 id가 없다. 좌석 선택은 입장한 뒤 `GET /api/performances/:id/seats`로 한다.
 
 **변경**
 

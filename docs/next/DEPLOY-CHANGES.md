@@ -1,12 +1,23 @@
 # 배포 구성에서 바뀌어야 할 것 (next)
 
 `next`의 코드 변경에 맞춰 배포 구성에서 고쳐야 할 곳을 모았다. `k8s/`와 `infra/`는 이번에 고치지 않고 목록만 둔다(과제 제출본과 태그 `v3.0-improved`의 구성이 그대로 남아 있어야 하고, 클라우드에 다시 올릴 때 한꺼번에 고친다).
-백엔드 2단계에서 앱 계정 권한 범위가 확정되면 1번의 GRANT 문을 다시 맞춘다.
 
 ## 1. DB 계정 권한
 
 세션을 MySQL에 두면서 앱 계정(`ticketing_app`)이 세션 행을 지울 수 있어야 한다(로그아웃, 만료 정리).
-권한은 세션 테이블 두 개에만 준다. 예매·좌석 테이블에는 DELETE를 열지 않는다.
+권한은 세션 테이블 두 개에만 준다. 예매·좌석·회원 테이블에는 DELETE를 열지 않는다.
+
+MySQL은 아직 없는 테이블에 `GRANT DELETE`만 주면 거부한다(ERROR 1146). 테이블 단위 권한을 미리 주려면 `CREATE`를 함께 줘야 한다. `CREATE`는 그 이름의 테이블을 만드는 권한일 뿐 DROP·ALTER는 포함하지 않는다.
+
+초기화 스크립트(migrate 전에 실행):
+
+```sql
+GRANT SELECT, INSERT, UPDATE ON ticketing.* TO 'ticketing_app'@'%';
+GRANT DELETE, CREATE ON ticketing.SPRING_SESSION            TO 'ticketing_app'@'%';
+GRANT DELETE, CREATE ON ticketing.SPRING_SESSION_ATTRIBUTES TO 'ticketing_app'@'%';
+```
+
+이미 migrate까지 끝난 DB(예: 만들어 둔 RDS):
 
 ```sql
 GRANT DELETE ON ticketing.SPRING_SESSION            TO 'ticketing_app'@'%';
@@ -15,11 +26,12 @@ GRANT DELETE ON ticketing.SPRING_SESSION_ATTRIBUTES TO 'ticketing_app'@'%';
 
 | 파일 | 고칠 곳 |
 |---|---|
-| `k8s/base/mysql-init.yaml` | 앱 계정 GRANT에 위 두 줄 추가 |
-| `infra/eks/rds-init-users.sh` | 같은 내용. 이미 만들어진 RDS에는 위 SQL을 한 번 실행 |
-| `backend/docker/mysql-init`, `local/init-db.sh` | 백엔드 세션이 고친다 |
+| `k8s/base/mysql-init.yaml` | 앱 계정 GRANT를 위 "초기화 스크립트" 내용으로 |
+| `infra/eks/rds-init-users.sh` | 같은 내용. 이미 만들어진 RDS에는 아래쪽 SQL을 한 번 실행 |
+| `backend/docker/mysql-init/01-init.sh`, `local/init-db.sh` | 반영됨(커밋 1970aea) |
 
 권한이 없으면 로그아웃과 만료 세션 삭제가 권한 오류로 실패한다.
+백엔드 세션이 새 DB로 확인했다: 초기화 → migrate → 가입·로그아웃·만료 정리에 권한 오류가 없고, 앱 계정의 예매·좌석·회원 테이블 DELETE와 세션 테이블 DROP·ALTER는 거부된다.
 
 ## 2. 준비 상태 확인(readiness)
 
