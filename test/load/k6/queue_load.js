@@ -40,12 +40,17 @@ stages.push({ duration: `${RAMP}s`, target: 0 });
 const waitersSeconds = stages.reduce((s, x) => s + Number(x.duration.replace('s', '')), 0);
 
 export const options = {
+  // 가상 사용자는 한 번 가입하고 같은 세션 쿠키로 계속 돈다(k6 기본값은 반복마다 쿠키를 지워 CSRF가 깨진다 — 예행에서 발견)
+  noCookiesReset: true,
   scenarios: {
     // 기준선 → 대기 트래픽 증가 동안 계속 예매 흐름을 돈다
     bookers: { executor: 'constant-vus', vus: BOOKERS, duration: `${BASELINE + waitersSeconds}s`, exec: 'booker' },
     waiters: { executor: 'ramping-vus', startVUs: 0, stages, startTime: `${BASELINE}s`, exec: 'waiter', gracefulRampDown: '10s' },
   },
   summaryTrendStats: ['med', 'p(95)', 'p(99)', 'max'],
+  // 흐름별 응답 시간을 요약에 보이게 하는 "항상 통과" 기준(k6는 기준이 걸린 하위 지표만 따로 보여 준다)
+  thresholds: Object.fromEntries(['queue_status', 'wait_enter', 'book_enter', 'book_seats', 'book_hold', 'book_confirm',
+    'book_cancel'].map((f) => [`http_req_duration{flow:${f}}`, ['max>=0']])),
 };
 
 const queueWait = new Trend('queue_wait_seconds');
@@ -82,9 +87,19 @@ function post(path, body, extra, flow) {
   });
 }
 
+const shown = { n: 0 };
+/** 예상 밖 응답은 VU마다 처음 3개만 로그로 남긴다(원인 확인용). */
+function report(name, r) {
+  if (shown.n++ < 3) console.warn(`${name}: HTTP ${r.status} ${(r.body || '').toString().slice(0, 200)}`);
+}
+
 function enterAndWait(flowPrefix, maxSeconds) {
   const e = post('/api/queue/enter', { performanceId: PERF }, null, `${flowPrefix}_enter`);
-  if (!check(e, { 'enter 200': (x) => x.status === 200 })) return null;
+  if (!check(e, { 'enter 200': (x) => x.status === 200 })) {
+    report('enter', e);
+    sleep(1); // 실패해도 빈 루프로 서버를 두드리지 않게
+    return null;
+  }
   const token = e.json('queueToken');
   let status = e.json('status');
   let after = e.json('pollAfterSeconds');
