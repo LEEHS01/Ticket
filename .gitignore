@@ -26,3 +26,7 @@ infra/aws/known_hosts
 
 # AWS 콘솔 화면 캡처 (저장소에 올리지 않는다)
 docs/captures/06-console/
+
+# 업그레이드 작업용 참고 자료 (다른 서비스 화면 캡처 등. 저장소에 올리지 않는다)
+.ref/
+.claude/
