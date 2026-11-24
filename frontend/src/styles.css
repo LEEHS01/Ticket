@@ -2058,6 +2058,10 @@ h2:focus {
 .lrow__rank--none {
   color: var(--c-text-disabled);
 }
+.lrow__date,
+.lrow__time {
+  display: block;
+}
 .lrow__date {
   font: 700 18px/1.2 var(--font);
   font-variant-numeric: tabular-nums;

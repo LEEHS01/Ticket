@@ -137,11 +137,14 @@
 .hero--skel {
   background: var(--c-bg-sub2);
 }
-@media (min-width: 768px) and (max-width: 1279px) {
+@media (min-width: 768px) and (max-width: 1023px) {
   .hero {
-    height: auto;
-    aspect-ratio: 3 / 1;
-    min-height: 300px;
+    height: 280px;
+  }
+}
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .hero {
+    height: 340px;
   }
 }
 .hero__track {
@@ -458,6 +461,7 @@
 }
 .rtop {
   display: flex;
+  align-items: flex-start;
   gap: 20px;
   padding: 20px;
   border-radius: var(--r-12);
