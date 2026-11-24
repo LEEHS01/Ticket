@@ -149,9 +149,9 @@ export function MyReservationsPage() {
           <p className="sec-empty resv-none">이 상태의 예매가 없어요.</p>
         ) : (
           <ul className="resv-list">
-            {shown.map((r) => (
+            {shown.map((r, i) => (
               <li key={r.code}>
-                <ResvCard r={r} show={posterOf.get(r.show.id) ?? null} onChange={replace} />
+                <ResvCard r={r} show={posterOf.get(r.show.id) ?? null} onChange={replace} eager={i < 3} />
               </li>
             ))}
           </ul>
@@ -160,7 +160,7 @@ export function MyReservationsPage() {
   );
 }
 
-function ResvCard({ r, show, onChange }: { r: Reservation; show: ShowSummary | null; onChange: (r: Reservation) => void }) {
+function ResvCard({ r, show, onChange, eager }: { r: Reservation; show: ShowSummary | null; onChange: (r: Reservation) => void; eager: boolean }) {
   const cancelled = isCancelled(r);
   const started = isStarted(r, Date.now());
   const [open, setOpen] = useState(false);
@@ -179,7 +179,7 @@ function ResvCard({ r, show, onChange }: { r: Reservation; show: ShowSummary | n
       </header>
       <div className="resv__body">
         <span className="thumb thumb--72" aria-hidden="true">
-          {show && <PosterArt showId={show.id} poster={show.poster} title={show.title} genre={show.genre} />}
+          {show && <PosterArt showId={show.id} poster={show.poster} title={show.title} genre={show.genre} eager={eager} />}
         </span>
         <div className="resv__info">
           <h2 id={`resv-${r.code}`} className="resv__title"><Link to={`/shows/${r.show.id}`}>{r.show.title}</Link></h2>

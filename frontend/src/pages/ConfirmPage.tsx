@@ -155,7 +155,7 @@ function ConfirmView({ perfId, session, hold }: { perfId: number; session: Booki
             <div className="cbox">
               <div className="cbox__show">
                 <span className="thumb thumb--72" aria-hidden="true">
-                  {s && <PosterArt showId={s.id} poster={s.poster} title={s.title} genre={s.genre} />}
+                  {s && <PosterArt showId={s.id} poster={s.poster} title={s.title} genre={s.genre} eager />}
                 </span>
                 <div>
                   <p className="cbox__title">{meta?.showTitle ?? s?.title}</p>

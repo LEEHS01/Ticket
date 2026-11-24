@@ -22,11 +22,22 @@ function PriceLine({ s }: { s: ShowSummary }) {
  * - rank: 제목 위에 순위 숫자(랭킹 카드)
  * - open: 가격 줄 대신 오픈 시각을 제목 위에(티켓 오픈 섹션)
  */
-export function PosterCard({ show: s, rank, variant = 'default' }: { show: ShowSummary; rank?: number; variant?: 'default' | 'open' }) {
+export function PosterCard({
+  show: s,
+  rank,
+  variant = 'default',
+  eager = false,
+}: {
+  show: ShowSummary;
+  rank?: number;
+  variant?: 'default' | 'open';
+  /** 첫 화면에 보이는 카드(각 목록의 첫 줄)는 지연 로드하지 않는다 */
+  eager?: boolean;
+}) {
   return (
     <Link to={`/shows/${s.id}`} className="pcard">
       <span className={`pcard__poster${dimmed(s.status) ? ' is-dim' : ''}`}>
-        <PosterArt showId={s.id} poster={s.poster} title={s.title} genre={s.genre} />
+        <PosterArt showId={s.id} poster={s.poster} title={s.title} genre={s.genre} eager={eager} />
         <StatusBadges show={s} />
       </span>
       {variant === 'open' && <span className="pcard__open">{openLabel(s.saleOpensAt)} 오픈</span>}
@@ -53,6 +64,9 @@ export function CardSkeleton() {
     </span>
   );
 }
+
+/** 목록마다 지연 로드하지 않을 앞쪽 카드 수(PC 첫 줄 5장. 모바일 첫 화면 2~3장도 들어간다) */
+export const EAGER_COUNT = 5;
 
 /** 포스터 카드 격자: xl 5열 / lg 4열 / md 3열 / sm 2열. compact = 필터가 있는 검색(4열) */
 export function CardGrid({ children, compact = false, label }: { children: ReactNode; compact?: boolean; label?: string }) {

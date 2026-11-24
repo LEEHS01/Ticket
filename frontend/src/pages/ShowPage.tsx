@@ -159,10 +159,10 @@ function Detail({ show: s, notice, onReload }: { show: ShowDetail; notice: Retur
       {/* 모바일 대표 영역: 포스터를 흐리게 확대한 바탕 + 가운데 포스터 */}
       <div className="dhero" aria-hidden="true">
         <span className="dhero__bg">
-          <PosterArt showId={s.id} poster={s.poster} title={s.title} genre={s.genre} />
+          <PosterArt showId={s.id} poster={s.poster} title={s.title} genre={s.genre} eager={mobile} />
         </span>
         <span className="dhero__poster">
-          <PosterArt showId={s.id} poster={s.poster} title={s.title} genre={s.genre} size="lg" eager={mobile} />
+          <PosterArt showId={s.id} poster={s.poster} title={s.title} genre={s.genre} size="lg" eager={mobile} priority={mobile} />
         </span>
       </div>
 
@@ -183,7 +183,7 @@ function Detail({ show: s, notice, onReload }: { show: ShowDetail; notice: Retur
         <div className="detail__main">
           <div className="dtop">
             <div className="dtop__poster">
-              <PosterArt showId={s.id} poster={s.poster} title={s.title} genre={s.genre} size="lg" alt={`${s.title} 포스터`} eager={!mobile} />
+              <PosterArt showId={s.id} poster={s.poster} title={s.title} genre={s.genre} size="lg" alt={`${s.title} 포스터`} eager={!mobile} priority={!mobile} />
             </div>
             <div className="dtop__info">
               <div className="badges dtop__badges">

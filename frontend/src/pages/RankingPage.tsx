@@ -99,7 +99,7 @@ export function RankingPage() {
             </ol>
             {data.items.length > 3 && (
               <ol className="rank__list" start={4} aria-label="4위부터">
-                {data.items.slice(3).map((it) => <RankLine key={it.show.id} row={it} />)}
+                {data.items.slice(3).map((it, i) => <RankLine key={it.show.id} row={it} eager={i < 3} />)}
               </ol>
             )}
           </>
@@ -122,7 +122,7 @@ function TopCard({ row }: { row: RankRow }) {
   return (
     <li className="rtop">
       <Link to={`/shows/${s.id}`} className={`rtop__poster${dimmed(s.status) ? ' is-dim' : ''}`} tabIndex={-1} aria-hidden="true">
-        <PosterArt showId={s.id} poster={s.poster} title={s.title} genre={s.genre} />
+        <PosterArt showId={s.id} poster={s.poster} title={s.title} genre={s.genre} eager />
       </Link>
       <div className="rtop__body">
         <p className="rtop__rank"><span className="sr-only">판매 </span>{row.rank}<span className="sr-only">위</span></p>
@@ -139,7 +139,7 @@ function TopCard({ row }: { row: RankRow }) {
   );
 }
 
-function RankLine({ row }: { row: RankRow }) {
+function RankLine({ row, eager = false }: { row: RankRow; eager?: boolean }) {
   const s = row.show;
   return (
     <li className="lrow">
@@ -151,7 +151,7 @@ function RankLine({ row }: { row: RankRow }) {
         )}
       </span>
       <span className="thumb thumb--72 lrow__thumb" aria-hidden="true">
-        <PosterArt showId={s.id} poster={s.poster} title={s.title} genre={s.genre} />
+        <PosterArt showId={s.id} poster={s.poster} title={s.title} genre={s.genre} eager={eager} />
       </span>
       <div className="lrow__body">
         <p className="lrow__title"><Link to={`/shows/${s.id}`}>{s.title}</Link></p>

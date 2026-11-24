@@ -28,7 +28,7 @@ export function GenrePage() {
           </p>
         </div>
         <div className="genre__sections">
-          <RankingSection key={genre} genre={genre} chips={false} />
+          <RankingSection key={genre} genre={genre} chips={false} eagerTop />
           <OpenSection shows={scoped} />
           <AllShowsSection key={`all-${genre}`} shows={shows} onRetry={retry} genre={genre} title={`${GENRE_LABEL[genre]} 전체`} />
         </div>

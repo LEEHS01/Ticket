@@ -6,7 +6,7 @@ import { GENRE_LABEL, GENRES } from '../format';
 import { pushRecent } from '../recent';
 import { usePageTitle } from '../shell';
 import { EmptyState, Illust, LoadError } from '../components/bits';
-import { CardGrid, GridSkeleton, PosterCard, Rail, SectionHead } from '../components/cards';
+import { CardGrid, EAGER_COUNT, GridSkeleton, PosterCard, Rail, SectionHead } from '../components/cards';
 import { Icon } from '../components/Icon';
 import { Sheet } from '../components/overlay';
 import { SearchBox } from '../components/SearchBox';
@@ -142,7 +142,7 @@ export function SearchPage() {
                     <NoResult q={q} filtered={filterCount > 0 && all.length > 0} onReset={reset} />
                   ) : (
                     <CardGrid compact label="검색 결과">
-                      {results.map((s) => <li key={s.id}><PosterCard show={s} /></li>)}
+                      {results.map((s, i) => <li key={s.id}><PosterCard show={s} eager={i < EAGER_COUNT} /></li>)}
                     </CardGrid>
                   ))}
               </div>
@@ -248,7 +248,7 @@ function Popular({ title }: { title: string }) {
     <section className="sec sr__popular" aria-labelledby="pop-h">
       <SectionHead id="pop-h" title={title} more={{ to: '/ranking', label: '랭킹 전체보기' }} />
       <Rail label={title}>
-        {items.map((s, i) => <li key={s.id}><PosterCard show={s} rank={i + 1} /></li>)}
+        {items.map((s, i) => <li key={s.id}><PosterCard show={s} rank={i + 1} eager /></li>)}
       </Rail>
     </section>
   );

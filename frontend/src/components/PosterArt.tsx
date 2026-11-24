@@ -25,11 +25,13 @@ type Props = {
    * 화면 낭독기가 제목을 두 번 읽지 않게 한다(장식 이미지로 처리).
    */
   alt?: string;
-  /** 첫 화면에 바로 보이는 큰 포스터는 지연 로드하지 않는다 */
+  /** 첫 화면(스크롤 전)에 보이는 포스터는 지연 로드하지 않는다 */
   eager?: boolean;
+  /** 화면의 대표 이미지(상세 포스터·첫 배너)만 먼저 받는다(fetchpriority=high) */
+  priority?: boolean;
 };
 
-export function PosterArt({ showId, poster, title, genre, size = 'sm', alt, eager = false }: Props) {
+export function PosterArt({ showId, poster, title, genre, size = 'sm', alt, eager = false, priority = false }: Props) {
   const [failed, setFailed] = useState(false);
 
   if (!HAS_IMAGE.has(showId) || failed) {
@@ -46,7 +48,7 @@ export function PosterArt({ showId, poster, title, genre, size = 'sm', alt, eage
       alt={alt ?? ''}
       loading={eager ? 'eager' : 'lazy'}
       decoding="async"
-      fetchPriority={eager ? 'high' : undefined}
+      fetchPriority={priority ? 'high' : undefined}
       draggable={false}
       onError={() => setFailed(true)}
     />

@@ -78,7 +78,7 @@ export function OpenPage() {
                 <p className="sec-empty">이 장르의 오픈 일정은 아직 없어요.</p>
               ) : (
                 <ul className="open__list">
-                  {schedule.map((s) => <ScheduleRow key={s.id} s={s} />)}
+                  {schedule.map((s, i) => <ScheduleRow key={s.id} s={s} eager={i < 3} />)}
                 </ul>
               )}
             </section>
@@ -104,7 +104,7 @@ function SoonCard({ s }: { s: ShowSummary }) {
   return (
     <li className="soon__card">
       <Link to={`/shows/${s.id}`} className="soon__poster" tabIndex={-1} aria-hidden="true">
-        <PosterArt showId={s.id} poster={s.poster} title={s.title} genre={s.genre} />
+        <PosterArt showId={s.id} poster={s.poster} title={s.title} genre={s.genre} eager />
       </Link>
       <div className="soon__body">
         <span className={`soon__dday${near ? ' is-near' : ''}`}>{dDayShort(s.saleOpensAt)}</span>
@@ -130,7 +130,7 @@ function SoonCard({ s }: { s: ShowSummary }) {
   );
 }
 
-function ScheduleRow({ s }: { s: ShowSummary }) {
+function ScheduleRow({ s, eager = false }: { s: ShowSummary; eager?: boolean }) {
   const d = dDayLabel(s.saleOpensAt);
   return (
     <li className="lrow">
@@ -139,7 +139,7 @@ function ScheduleRow({ s }: { s: ShowSummary }) {
         <span className="lrow__time">{shortDate(s.saleOpensAt).slice(5)} {hm(s.saleOpensAt)}</span>
       </span>
       <span className="thumb thumb--72 lrow__thumb" aria-hidden="true">
-        <PosterArt showId={s.id} poster={s.poster} title={s.title} genre={s.genre} />
+        <PosterArt showId={s.id} poster={s.poster} title={s.title} genre={s.genre} eager={eager} />
       </span>
       <div className="lrow__body">
         <p className="lrow__title"><Link to={`/shows/${s.id}`}>{s.title}</Link></p>

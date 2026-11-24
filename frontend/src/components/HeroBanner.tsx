@@ -86,6 +86,7 @@ function SlideView({ slide, index, total, active, eager }: { slide: Slide; index
               height={400}
               alt=""
               loading={eager ? 'eager' : 'lazy'}
+              fetchPriority={index === 0 ? 'high' : undefined}
               decoding="async"
             />
           ) : (
@@ -95,7 +96,7 @@ function SlideView({ slide, index, total, active, eager }: { slide: Slide; index
         {/* 포스터: 모바일은 카드 전체를 채우고(위쪽 기준), PC 대체 표시에서는 오른쪽 320 높이 */}
         {s && (
           <span className="hero__poster" aria-hidden="true">
-            <PosterArt showId={s.id} poster={s.poster} title={s.title} genre={s.genre} size="lg" eager={eager} />
+            <PosterArt showId={s.id} poster={s.poster} title={s.title} genre={s.genre} size="lg" eager={eager} priority={index === 0} />
           </span>
         )}
         {slide.mobileImageUrl && <img className="hero__mimg" src={slide.mobileImageUrl} alt="" loading="lazy" decoding="async" />}
@@ -203,7 +204,7 @@ export function HeroBanner({ banners, shows }: { banners: Load<Banner[]>; shows:
     >
       <div className={`hero__track at-${at}`} aria-live={running ? 'off' : 'polite'}>
         {slides.map((sl, i) => (
-          <SlideView key={sl.key} slide={sl} index={i} total={total} active={i === at} eager={i === 0} />
+          <SlideView key={sl.key} slide={sl} index={i} total={total} active={i === at} eager={i === 0 || i === at || i === (at + 1) % total} />
         ))}
       </div>
       {total > 1 && (

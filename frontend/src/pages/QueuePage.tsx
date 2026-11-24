@@ -143,7 +143,7 @@ export function QueuePage() {
           {show ? (
             <div className="qbox__show">
               <span className="thumb thumb--72" aria-hidden="true">
-                <PosterArt showId={show.id} poster={show.poster} title={show.title} genre={show.genre} />
+                <PosterArt showId={show.id} poster={show.poster} title={show.title} genre={show.genre} eager />
               </span>
               <div className="qbox__what">
                 <p className="qbox__title">{show.title}</p>

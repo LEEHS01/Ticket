@@ -201,7 +201,7 @@ export function NoticeDetailPage() {
             {show && (
               <div className="ndetail__show">
                 <span className="thumb thumb--72" aria-hidden="true">
-                  <PosterArt showId={show.id} poster={show.poster} title={show.title} genre={show.genre} />
+                  <PosterArt showId={show.id} poster={show.poster} title={show.title} genre={show.genre} eager />
                 </span>
                 <div className="ndetail__show-body">
                   <p className="lrow__title">{show.title}</p>

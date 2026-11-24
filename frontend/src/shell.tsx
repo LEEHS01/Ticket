@@ -207,12 +207,23 @@ export function SiteHeader({ layout }: { layout: Layout }) {
   const { pathname } = useLocation();
   const headRef = useRef<HTMLElement>(null);
   const [stuck, setStuck] = useState(false);
+  // 장르 메뉴 줄이 위에 붙었는지: 위 두 줄(보조 링크 32 + 로고·검색 72)을 다 지나 스크롤했을 때만.
+  // IntersectionObserver는 창이 가려져 그려지지 않을 때 '안 보임'으로 알려 와 처음부터 작은 로고가 보일 수 있어
+  // 스크롤 위치와 머리글 높이로 직접 판단한다(머리글이 숨는 모바일 폭에서는 늘 false).
   useEffect(() => {
     const el = headRef.current;
     if (!el) return;
-    const io = new IntersectionObserver(([e]) => setStuck(!e!.isIntersecting), { threshold: 0 });
-    io.observe(el);
-    return () => io.disconnect();
+    const update = () => {
+      const h = el.offsetHeight;
+      setStuck(h > 0 && window.scrollY >= h);
+    };
+    update();
+    window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+    };
   }, []);
 
   const sub = layout === 'detail' || layout === 'sub';

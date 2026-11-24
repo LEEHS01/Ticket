@@ -29,7 +29,7 @@ export function OpenSection({ shows, title = '티켓 오픈 예정' }: { shows: 
       <SectionHead id="sec-open" title={title} count={list.length} countTone="brand" more={{ to: '/open' }} />
       <Rail label={title}>
         {list.slice(0, 5).map((s) => (
-          <li key={s.id}><PosterCard show={s} variant="open" /></li>
+          <li key={s.id}><PosterCard show={s} variant="open" eager /></li>
         ))}
       </Rail>
     </section>
@@ -37,7 +37,16 @@ export function OpenSection({ shows, title = '티켓 오픈 예정' }: { shows: 
 }
 
 // ── 랭킹 카드 1~5위 ──
-export function RankingSection({ genre, chips }: { genre: Genre | null; chips: boolean }) {
+export function RankingSection({
+  genre,
+  chips,
+  eagerTop = false,
+}: {
+  genre: Genre | null;
+  chips: boolean;
+  /** 화면 위쪽이라 첫 화면에 보이면 true */
+  eagerTop?: boolean;
+}) {
   const [picked, setPicked] = useState<Genre | null>(genre);
   const active = chips ? picked : genre;
   const [rank, retry] = useRanking(active);
@@ -67,7 +76,7 @@ export function RankingSection({ genre, chips }: { genre: Genre | null; chips: b
           <Rail label={`${title} 1~5위`}>
             {/* 순위는 받은 목록 안의 순서(장르를 고르면 그 장르 안 1, 2, 3…) */}
             {rank.data.items.slice(0, 5).map((it, i) => (
-              <li key={it.show.id}><PosterCard show={it.show} rank={i + 1} /></li>
+              <li key={it.show.id}><PosterCard show={it.show} rank={i + 1} eager={eagerTop} /></li>
             ))}
           </Rail>
         ))}

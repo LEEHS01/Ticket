@@ -63,7 +63,7 @@ function Done({ r }: { r: Reservation }) {
           <div className="tcard__body">
             <div className="tcard__show">
               <span className="thumb thumb--72" aria-hidden="true">
-                {s && <PosterArt showId={s.id} poster={s.poster} title={s.title} genre={s.genre} />}
+                {s && <PosterArt showId={s.id} poster={s.poster} title={s.title} genre={s.genre} eager />}
               </span>
               <div>
                 <p className="tcard__title">{r.show.title}</p>
