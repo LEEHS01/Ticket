@@ -14,8 +14,9 @@ redis.call('HSET', KEYS[5], 'perf', ARGV[5], 'uid', ARGV[7])
 redis.call('PEXPIRE', KEYS[5], ARGV[6])
 redis.call('SET', KEYS[6], ARGV[4], 'PX', ARGV[6])
 
--- advance 직후 빈자리가 있으면 대기자는 0명이다 → 새로 온 사람이 새치기하는 일이 없다.
-if redis.call('ZCARD', KEYS[3]) < max_active then
+-- 바로 입장은 "빈자리가 있고 기다리는 사람이 없을 때"만(next). advance가 한 번에 처리하는 인원에 상한이 있어,
+-- 빈자리와 대기자가 함께 남아 있을 수 있다 → 그때 새로 온 사람은 줄 맨 뒤에 선다(새치기 없음).
+if redis.call('ZCARD', KEYS[3]) < max_active and redis.call('ZCARD', KEYS[1]) == 0 then
   local until_ms = now + admit_ms
   redis.call('ZADD', KEYS[3], until_ms, ARGV[4])
   return {1, 0, until_ms}
