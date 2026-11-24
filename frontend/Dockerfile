@@ -14,6 +14,8 @@ COPY mock ./mock
 ARG APP_VERSION=dev
 ENV VITE_APP_VERSION=${APP_VERSION}
 RUN npm run build
+# 모의 API(mock/)는 개발 서버 전용이다. 결과물에 흔적(조작 경로, 시연 계정)이 있으면 빌드를 멈춘다
+RUN if grep -rqE "__mock|test@example\.com|test1234|ticketing-mock-api" dist; then echo "dist에 모의 코드 흔적이 있습니다" >&2; exit 1; fi
 
 # nginx-unprivileged: nginx를 uid 101(nginx)로 실행하도록 만든 이미지. 8080 포트를 쓴다
 FROM nginxinc/nginx-unprivileged:1.30-alpine-slim
