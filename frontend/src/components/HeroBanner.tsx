@@ -3,7 +3,7 @@ import { Link } from 'react-router';
 import bannerIds from 'virtual:banner-images';
 import type { Banner, ShowSummary } from '../api';
 import type { Load } from '../data';
-import { useReducedMotion } from '../data';
+import { useIsMobile, useReducedMotion } from '../data';
 import { GENRE_LABEL, periodLabel, shortPeriod } from '../format';
 import { PosterArt } from './PosterArt';
 import { Icon } from './Icon';
@@ -62,7 +62,7 @@ function HueField({ hue }: { hue: number }) {
   );
 }
 
-function SlideView({ slide, index, total, active, eager }: { slide: Slide; index: number; total: number; active: boolean; eager: boolean }) {
+function SlideView({ slide, index, total, active, eager, mobile }: { slide: Slide; index: number; total: number; active: boolean; eager: boolean; mobile: boolean }) {
   const s = slide.show;
   const banner = HAS_BANNER.has(slide.showId);
   return (
@@ -75,12 +75,13 @@ function SlideView({ slide, index, total, active, eager }: { slide: Slide; index
       inert={!active}
     >
       <Link to={`/shows/${slide.showId}`} className="hero__link">
-        {/* PC 바탕: 배너 그림(2400×800, 작은 것 1200×400) 또는 포스터 색 그라데이션 */}
+        {/* PC 바탕: 배너 그림(큰 것 1440×480, 작은 것 1200×400. 받은 원본 1584px 안에서 3:1로 잘라 키우지 않음) 또는 포스터 색 그라데이션 */}
         <span className="hero__bg" aria-hidden="true">
-          {banner ? (
+          {/* 모바일은 포스터 카드를 쓰므로(03 문서 4.1) 배너 그림을 받지 않는다 */}
+          {mobile ? null : banner ? (
             <img
               src={`/banners/banner-${slide.showId}-sm.webp`}
-              srcSet={`/banners/banner-${slide.showId}-sm.webp 1200w, /banners/banner-${slide.showId}.webp 2400w`}
+              srcSet={`/banners/banner-${slide.showId}-sm.webp 1200w, /banners/banner-${slide.showId}.webp 1440w`}
               sizes="(min-width: 1280px) 1200px, 100vw"
               width={1200}
               height={400}
@@ -142,6 +143,7 @@ export function HeroBanner({ banners, shows }: { banners: Load<Banner[]>; shows:
   const [focusIn, setFocusIn] = useState(false);
   const [visible, setVisible] = useState(true);
   const reduce = useReducedMotion();
+  const mobile = useIsMobile();
   const rootRef = useRef<HTMLElement>(null);
   const total = slides?.length ?? 0;
   const at = total ? index % total : 0;
@@ -204,7 +206,7 @@ export function HeroBanner({ banners, shows }: { banners: Load<Banner[]>; shows:
     >
       <div className={`hero__track at-${at}`} aria-live={running ? 'off' : 'polite'}>
         {slides.map((sl, i) => (
-          <SlideView key={sl.key} slide={sl} index={i} total={total} active={i === at} eager={i === 0 || i === at || i === (at + 1) % total} />
+          <SlideView key={sl.key} slide={sl} index={i} total={total} active={i === at} eager={i === 0 || i === at || i === (at + 1) % total} mobile={mobile} />
         ))}
       </div>
       {total > 1 && (
