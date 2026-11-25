@@ -109,6 +109,7 @@ type Reservation = /* v3 */ & { paymentMethod: PaymentMethod };
 ## 3. 시드
 
 - 배너 6개: 공연 15, 4, 1, 6, 8, 12 순서(04 문서의 배너 그림과 같은 공연). `imageUrl`은 `/banners/banner-{showId}.webp`, `mobileImageUrl`은 `null`.
+- (2026-11-25 추가) 공연은 68개, 배너는 16개가 된다. 추가분은 `SHOWS-ADD.md`와 `BANNERS-ADD.md`를 따른다. 응답은 지금처럼 노출 기간 안의 것 가운데 앞에서 6개다.
 - 공지: 오픈 예정 공연마다 `TICKET_OPEN` 1건(공연과 연결, 오픈 일시 포함), `SERVICE` 3건(그중 1건 고정). 재실행해도 중복되지 않게 한다.
 - 공연 18개 모두에 `tagline`과 `region`을 넣는다. 지역은 가상 공연장별로 고정하고 3~4개 지역이 섞이게 한다.
 - 문구는 모두 새로 쓴다. 다른 서비스의 문구를 가져오지 않는다.
