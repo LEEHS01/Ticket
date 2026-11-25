@@ -7,14 +7,14 @@
 # 필요한 도구: curl, jq, openssl
 # 테스트 계정(이메일, 비밀번호)과 예매번호는 상태 파일에 저장하고 화면에는 비밀번호를 출력하지 않는다.
 #   상태 파일: $SCENARIO_STATE (기본값 ~/.ticketing-scenario)
-#   기대 공연 수: $EXPECT_SHOWS (기본값 18)
+#   기대 공연 수: $EXPECT_SHOWS (기본값 68)
 set -uo pipefail
 
 BASE="${1:?사용법: scenario.sh <주소> [verify]}"
 BASE="${BASE%/}"
 MODE="${2:-run}"
 STATE="${SCENARIO_STATE:-$HOME/.ticketing-scenario}"
-EXPECT_SHOWS="${EXPECT_SHOWS:-18}"
+EXPECT_SHOWS="${EXPECT_SHOWS:-68}"
 JAR="$(mktemp)"
 trap 'rm -f "$JAR"' EXIT
 
