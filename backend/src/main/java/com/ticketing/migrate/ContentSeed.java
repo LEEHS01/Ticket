@@ -89,7 +89,7 @@ final class ContentSeed {
             new SeedBanner("moonlight-laundry", "뮤지컬", "밤에만 문을 여는 세탁소", "저마다의 사연이 담긴 빨래가 모이는 창작 뮤지컬"),
             new SeedBanner("girl-who-folds-time", "뮤지컬", "접힌 종이 한 장, 되돌린 하루", "판매량 1위 창작 뮤지컬, 네 번의 회차 예매 중"),
             new SeedBanner("dawnlight-blue-frequency", "콘서트", "새벽빛 밴드 〈푸른 주파수〉", "데뷔 5주년 단독 공연, 새 앨범 수록곡 첫 무대"),
-            new SeedBanner("cloud-station", "뮤지컬", "구름 위 작은 정거장으로", "온 가족이 함께 보는 뮤지컬, 곧 예매가 열립니다"),
+            new SeedBanner("cloud-station", "뮤지컬", "구름 위 작은 정거장으로", "구름 위 정거장에서 기차를 기다리는 가족 뮤지컬"),
             new SeedBanner("rooftop-observatory", "연극", "옥탑방에 들여놓은 망원경", "별을 보려던 세 친구의 좌충우돌 코미디"),
             new SeedBanner("piano-memory-of-water", "클래식", "피아노 리사이틀 〈물의 기억〉", "물을 주제로 고른 소품들로 꾸민 독주회"),
             // 추가 10개(순서 7~16, docs/next/BANNERS-ADD.md): 공연 33, 21, 34, 37, 52, 56, 42, 32, 68, 45. 말머리는 장르만
