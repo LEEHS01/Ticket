@@ -81,14 +81,29 @@ final class ContentSeed {
     record SeedBanner(String showSlug, String eyebrow, String title, String subtitle) {
     }
 
-    /** API-v4.md 3장: 공연 15, 4, 1, 6, 8, 12 순서. */
+    /**
+     * 배너 16개(이 순서가 sort_order). API-v4.md 3장의 공연 15, 4, 1, 6, 8, 12 + BANNERS-ADD.md의 10개.
+     * 노출은 그 공연의 마지막 회차 시작까지라, 앞 공연이 끝나면 뒤 배너가 차례로 올라온다(GET /api/banners는 최대 6개).
+     */
     static final List<SeedBanner> BANNERS = List.of(
             new SeedBanner("moonlight-laundry", "뮤지컬", "밤에만 문을 여는 세탁소", "저마다의 사연이 담긴 빨래가 모이는 창작 뮤지컬"),
             new SeedBanner("girl-who-folds-time", "뮤지컬", "접힌 종이 한 장, 되돌린 하루", "판매량 1위 창작 뮤지컬, 네 번의 회차 예매 중"),
             new SeedBanner("dawnlight-blue-frequency", "콘서트", "새벽빛 밴드 〈푸른 주파수〉", "데뷔 5주년 단독 공연, 새 앨범 수록곡 첫 무대"),
             new SeedBanner("cloud-station", "오픈 예정", "구름 위 작은 정거장으로", "온 가족이 함께 보는 뮤지컬, 곧 예매가 열립니다"),
             new SeedBanner("rooftop-observatory", "연극", "옥탑방에 들여놓은 망원경", "별을 보려던 세 친구의 좌충우돌 코미디"),
-            new SeedBanner("piano-memory-of-water", "클래식", "피아노 리사이틀 〈물의 기억〉", "물을 주제로 고른 소품들로 꾸민 독주회"));
+            new SeedBanner("piano-memory-of-water", "클래식", "피아노 리사이틀 〈물의 기억〉", "물을 주제로 고른 소품들로 꾸민 독주회"),
+            // 추가 10개(순서 7~16, docs/next/BANNERS-ADD.md): 공연 33, 21, 34, 37, 52, 56, 42, 32, 68, 45. 말머리는 장르만
+            new SeedBanner("snowman-photo-studio", "뮤지컬", "겨울에만 문을 여는 사진관", "녹기 전에 한 장, 눈사람과 함께 찍는 가족 뮤지컬"),
+            new SeedBanner("paper-plane-cleared-to-land", "콘서트", "종이비행기 〈착륙 허가〉", "3년 만의 단독 공연, 새 앨범 전곡을 라이브로"),
+            new SeedBanner("twelfth-bell", "뮤지컬", "자정의 종이 울리면", "연말과 새해를 잇는 하룻밤의 창작 뮤지컬"),
+            new SeedBanner("west-attic-inventor", "뮤지컬", "다락방에서 태어난 발명품들", "4주 동안 이어지는 창작 뮤지컬, 열 번의 무대"),
+            new SeedBanner("neighborhood-detective", "연극", "사건은 없고 소문만 많은 동네", "이웃집 탐정이 벌이는 유쾌한 소동극"),
+            new SeedBanner("broken-clock-shop", "연극", "모두 다른 시간을 가리키는 가게", "멈춘 시계를 고치는 시계방의 봄"),
+            new SeedBanner("thousand-paper-cranes", "뮤지컬", "천 번째 종이학을 접기까지", "늦겨울부터 봄까지 이어지는 창작 뮤지컬"),
+            new SeedBanner("solbaram-kkotsaem", "콘서트", "꽃샘추위 끝의 시티팝", "솔바람 트리오가 들려주는 이른 봄의 무대"),
+            new SeedBanner("spring-symphony-awakening-fields", "클래식", "교향곡으로 여는 봄", "전원을 그린 교향곡, 봄맞이 교향악의 밤"),
+            new SeedBanner("rooftop-gardener", "뮤지컬", "지붕마다 정원을 심는 사람", "도시의 옥상에서 피어나는 봄의 뮤지컬"));
+
 
     record SeedNotice(String slug, String title, String body, boolean pinned, int publishedDaysAgo) {
     }

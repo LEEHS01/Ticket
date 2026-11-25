@@ -43,7 +43,7 @@
 - 결제는 모의 결제입니다. 고른 수단의 이름만 `reservations.payment_method`에 기록하고 결제 정보는 받지 않습니다. 같은 `Idempotency-Key` 재전송은 처음 응답(처음 고른 수단)을 그대로 돌려줍니다.
 - 스키마 `V4__api_v4_content_ranking_payment.sql`: `shows.tagline VARCHAR(30)`·`shows.region VARCHAR(10)`(+`idx_shows_region`), `reservations.payment_method`(기본 `CARD`, CHECK 3종, 기존 예매는 `CARD`) + `idx_reservations_status_created`, 새 테이블 `banners`(slug 유니크, `show_id` FK, 노출 기간, `image_url`은 `/`로 시작하는 프론트 경로만 CHECK), `notices`(slug 유니크, 분류 CHECK, `show_id` FK NULL 가능).
 - **시드**(재실행해도 slug 기준 upsert라 중복 없음, 문구는 모두 새로 씀):
-  - 배너 6개: 공연 15, 4, 1, 6, 8, 12 순서. `imageUrl` = `/banners/banner-{showId}.webp`, `mobileImageUrl` = null, 노출은 그 공연의 마지막 회차 시작까지.
+  - 배너 16개: 공연 15, 4, 1, 6, 8, 12, 33, 21, 34, 37, 52, 56, 42, 32, 68, 45 순서(7~16번째는 `docs/next/BANNERS-ADD.md`). `imageUrl` = `/banners/banner-{showId}.webp`, `mobileImageUrl` = null, 노출은 그 공연의 마지막 회차 시작까지.
   - 공지 20건: 오픈 예정 공연(처음 18개 중 6·9·11번 + 추가 50개 중 14개, 모두 17개)마다 `TICKET_OPEN` 1건(공연 연결, 오픈 일시 = 판매 시작 시각) + `SERVICE` 3건(대기열 이용 방법[고정], 결제 수단 안내, 로그인 제한 안내). 기본 size 20이면 1쪽.
   - 공연 68개 모두 `tagline`(30자 이내)과 `region`. 지역은 가상 공연장마다 고정이고 7개 지역: 서울 27·경기 18·대구 9·부산 6·인천 3·대전 3·광주 2(공연 수 기준). 공연장 → 지역은 `migrate/ContentSeed.VENUE_REGIONS`, 공연장 → 좌석 배치는 `migrate/AddedShows.VENUE_LAYOUTS`.
   - 시드 예매 시각을 "판매 시작 ~ 지금"(최대 14일)에 흩어 놓아 기간별 랭킹이 달라집니다(공연마다 최근에 몰리는 정도가 다름). **새 DB에만 적용**됩니다(이미 좌석이 있는 회차에는 시드 예매를 새로 만들지 않으므로 기존 DB의 시드 예매는 모두 "그때의 지금" 시각이고, 기간별 결과가 비슷하게 나올 수 있음).
