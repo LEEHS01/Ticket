@@ -67,9 +67,9 @@ class SeedIdContinuityIT {
     }
 
     @Test
-    void 시드_공연_18개는_SHOWS_순서대로_id가_증가하고_다시_돌려도_id와_카운터가_바뀌지_않는다() {
+    void 시드_공연_68개는_SHOWS_순서대로_id가_증가하고_다시_돌려도_id와_카운터가_바뀌지_않는다() {
         List<Long> ids = seedShowIds();
-        assertThat(ids).hasSize(18).isSorted().doesNotHaveDuplicates();
+        assertThat(ids).hasSize(Seeder.SHOWS.size()).isSorted().doesNotHaveDuplicates();
         long before = autoIncrement();
 
         for (int i = 0; i < 3; i++) {
@@ -77,7 +77,7 @@ class SeedIdContinuityIT {
         }
 
         assertThat(seedShowIds()).isEqualTo(ids);
-        assertThat(autoIncrement()).isEqualTo(before); // 예전 방식이면 회당 18씩 올라갔다
+        assertThat(autoIncrement()).isEqualTo(before); // 예전 방식이면 회당 공연 수만큼 올라갔다
     }
 
     @Test

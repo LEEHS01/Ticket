@@ -77,7 +77,8 @@ public class Seeder {
         return LocalTime.of(h, m);
     }
 
-    static final List<SeedShow> SHOWS = List.of(
+    /** 처음 18개(1~18번). 순서·내용을 바꾸지 않는다. */
+    private static final List<SeedShow> FIRST_18 = List.of(
             // ---- CONCERT ----
             new SeedShow("dawnlight-blue-frequency", "새벽빛 밴드 단독 콘서트 〈푸른 주파수〉", Genre.CONCERT, "누리 아트홀",
                     -10, t(20, 0), "8세 이상", 150, List.of("새벽빛 밴드"),
@@ -210,6 +211,12 @@ public class Seeder {
                             new SeedGrade("S", "S석", 44_000, 0)),
                     List.of(new SeedPerf(5, t(14, 0), 0.55), new SeedPerf(6, t(11, 0), 0.3),
                             new SeedPerf(6, t(14, 0), 0.6)), 110));
+
+    /**
+     * 시드 공연 전체 = 처음 18개 + 추가 50개(19~68번, {@link AddedShows}). 새 공연은 반드시 맨 끝에 붙인다
+     * (새 DB에서 id가 이 순서대로 1부터 매겨지고, 포스터 파일 posters/{id}.webp와 맞아야 한다).
+     */
+    static final List<SeedShow> SHOWS = java.util.stream.Stream.concat(FIRST_18.stream(), AddedShows.SHOWS.stream()).toList();
 
     public record Result(int shows, int performances, int newSeats, int newSeedReservations, boolean demoAccount,
                          int banners, int notices) {

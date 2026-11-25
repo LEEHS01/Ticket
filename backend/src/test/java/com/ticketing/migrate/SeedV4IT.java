@@ -58,7 +58,7 @@ class SeedV4IT {
 
         // 공지: 오픈 예정 공연마다 TICKET_OPEN 1건(공연 연결, 오픈 일시 = 판매 시작), SERVICE 3건(고정 1건)
         List<Seeder.SeedShow> upcoming = Seeder.SHOWS.stream().filter(s -> s.saleOpensDay() > 0).toList();
-        assertThat(upcoming).hasSize(3);
+        assertThat(upcoming).hasSize(17); // 처음 18개 중 3 + 추가 50개 중 14
         for (Seeder.SeedShow s : upcoming) {
             Map<String, Object> n = jdbc.sql("""
                             SELECT n.category, n.show_id, n.ticket_open_at = sh.sale_opens_at AS same_time, n.pinned
@@ -69,7 +69,7 @@ class SeedV4IT {
             assertThat(((Number) n.get("same_time")).intValue()).isEqualTo(1);
         }
         assertThat(jdbc.sql("SELECT COUNT(*) FROM notices WHERE slug LIKE 'ticket-open-%'").query(Integer.class).single())
-                .isEqualTo(3);
+                .isEqualTo(upcoming.size());
         assertThat(jdbc.sql("SELECT COUNT(*) FROM notices WHERE slug LIKE 'service-%' AND category = 'SERVICE'")
                 .query(Integer.class).single()).isEqualTo(3);
         assertThat(jdbc.sql("SELECT COUNT(*) FROM notices WHERE slug LIKE 'service-%' AND pinned").query(Integer.class)
@@ -78,12 +78,12 @@ class SeedV4IT {
                 + "AND published_at > NOW(3)").query(Integer.class).single()).isZero(); // 모두 이미 게시됨
         assertThat(seedBanners()).hasSize(6);
 
-        // 공연 18개 모두 한 줄 소개(30자 이내)와 지역(서울·경기·대구·부산 중, 3개 이상 섞임)
+        // 공연 68개 모두 한 줄 소개(30자 이내)와 지역(7개 지역 중, 3개 이상 섞임)
         List<Map<String, Object>> shows = jdbc.sql("SELECT slug, tagline, region FROM shows WHERE slug IN (:s)")
                 .param("s", Seeder.SHOWS.stream().map(Seeder.SeedShow::slug).toList()).query().listOfRows();
-        assertThat(shows).hasSize(18).allSatisfy(s -> {
+        assertThat(shows).hasSize(Seeder.SHOWS.size()).allSatisfy(s -> {
             assertThat((String) s.get("tagline")).isNotBlank().hasSizeLessThanOrEqualTo(30);
-            assertThat((String) s.get("region")).isIn("서울", "경기", "대구", "부산");
+            assertThat((String) s.get("region")).isIn("서울", "경기", "대구", "부산", "인천", "대전", "광주");
         });
         Set<Object> regions = shows.stream().map(s -> s.get("region")).collect(java.util.stream.Collectors.toSet());
         assertThat(regions).hasSizeGreaterThanOrEqualTo(3);

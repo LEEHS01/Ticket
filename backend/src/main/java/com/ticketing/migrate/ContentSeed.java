@@ -19,7 +19,7 @@ final class ContentSeed {
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
     /** 공연 slug → 한 줄 소개(30자 이내). */
-    static final Map<String, String> TAGLINES = Map.ofEntries(
+    private static final Map<String, String> FIRST_18_TAGLINES = Map.ofEntries(
             Map.entry("dawnlight-blue-frequency", "데뷔 5주년, 밴드 편곡으로 듣는 대표곡"),
             Map.entry("citypop-summer-night", "도시의 밤을 닮은 두 팀의 시티팝 무대"),
             Map.entry("mulgyeol-indie-fest-2026", "강가 야외무대에서 이틀간 이어지는 인디 축제"),
@@ -39,7 +39,16 @@ final class ContentSeed {
             Map.entry("long-winter-cello", "첼로와 피아노로 듣는 겨울 소나타"),
             Map.entry("cat-postman", "편지를 나르는 고양이와 아이들의 모험"));
 
-    /** 가상 공연장 → 지역. 공연장마다 고정이고 4개 지역(서울 7·경기 6·대구 3·부산 2)이 섞인다. */
+    /** 공연 slug → 한 줄 소개(1~18번 + 추가 50개는 AddedShows.TAGLINES, 표의 값 그대로). */
+    static final Map<String, String> TAGLINES = merged(FIRST_18_TAGLINES, AddedShows.TAGLINES);
+
+    private static Map<String, String> merged(Map<String, String> a, Map<String, String> b) {
+        Map<String, String> m = new java.util.LinkedHashMap<>(a);
+        m.putAll(b);
+        return Map.copyOf(m);
+    }
+
+    /** 가상 공연장 → 지역. 공연장마다 고정. 처음 18개는 4개 지역, 추가 50개로 7개 지역이 된다. */
     static final Map<String, String> VENUE_REGIONS = Map.ofEntries(
             Map.entry("누리 아트홀", "서울"),
             Map.entry("별무리 라이브홀", "서울"),
@@ -51,7 +60,14 @@ final class ContentSeed {
             Map.entry("모퉁이 극장", "대구"),
             Map.entry("미리내 콘서트홀", "대구"),
             Map.entry("물결 야외극장", "부산"),
-            Map.entry("소금꽃 소극장", "부산"));
+            Map.entry("소금꽃 소극장", "부산"),
+            // 추가 공연(19~68번)의 새 공연장 6곳 — 지역 7개(서울·경기·대구·부산 + 인천·대전·광주)
+            Map.entry("윤슬 홀", "서울"),
+            Map.entry("은행나무 소극장", "서울"),
+            Map.entry("바다숲 아트홀", "인천"),
+            Map.entry("가온 아트홀", "대전"),
+            Map.entry("새솔 극장", "광주"),
+            Map.entry("파도소리 홀", "부산"));
 
     static String region(String venue) {
         String r = VENUE_REGIONS.get(venue);
