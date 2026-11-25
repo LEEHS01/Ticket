@@ -191,6 +191,15 @@ export function HeroBanner({ banners, shows }: { banners: Load<Banner[]>; shows:
       onBlur={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocusIn(false);
       }}
+      // 배너는 transform으로만 넘긴다. overflow: clip을 모르는 브라우저에서 안쪽 scrollIntoView·찾기 때문에
+      // 상자가 스크롤되면 모든 장이 밀려 보이므로 바로 되돌린다(clip을 아는 브라우저에서는 스크롤 자체가 생기지 않음)
+      onScroll={(e) => {
+        const el = e.currentTarget;
+        if (el.scrollLeft !== 0 || el.scrollTop !== 0) {
+          el.scrollLeft = 0;
+          el.scrollTop = 0;
+        }
+      }}
       onTouchStart={(e) => {
         const t = e.touches[0];
         if (t) touch.current = { x: t.clientX, y: t.clientY };

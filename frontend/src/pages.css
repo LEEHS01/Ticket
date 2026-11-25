@@ -130,7 +130,10 @@
   position: relative;
   height: 400px;
   border-radius: var(--r-12);
+  /* 잘라 보이기만 하고 스크롤 상자는 되지 않게(clip). 안쪽에 scrollIntoView·찾기(Ctrl+F)가 걸려도 scrollLeft가 생기지 않는다.
+     clip을 모르는 브라우저는 hidden + HeroBanner의 scrollLeft 되돌리기로 막는다 */
   overflow: hidden;
+  overflow: clip;
   background: #1b1f24;
   isolation: isolate;
 }
@@ -191,6 +194,7 @@
   aspect-ratio: 3 / 4;
   border-radius: var(--r-8);
   overflow: hidden;
+  overflow: clip;
   background: var(--c-bg-sub2);
 }
 .hero__poster .poster {
@@ -474,6 +478,7 @@
   aspect-ratio: 3 / 4;
   border-radius: var(--r-8);
   overflow: hidden;
+  overflow: clip;
   background: var(--c-bg-sub2);
 }
 .rtop__poster.is-dim .poster {
@@ -622,6 +627,7 @@
   height: 160px;
   border-radius: var(--r-8);
   overflow: hidden;
+  overflow: clip;
   background: var(--c-bg-sub2);
 }
 .soon__body {
@@ -908,6 +914,7 @@
   aspect-ratio: 3 / 4;
   border-radius: var(--r-8);
   overflow: hidden;
+  overflow: clip;
   background: var(--c-bg-sub2);
 }
 .dtop__poster::after {
@@ -1219,6 +1226,7 @@
     position: relative;
     height: 320px;
     overflow: hidden;
+    overflow: clip;
     background: #1b1f24;
   }
   .dhero__bg {
@@ -1239,6 +1247,7 @@
     height: 240px;
     border-radius: var(--r-8);
     overflow: hidden;
+    overflow: clip;
     background: var(--c-bg-sub2);
   }
   .crumbs {

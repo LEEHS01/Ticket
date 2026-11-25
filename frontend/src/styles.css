@@ -1920,6 +1920,7 @@ h2:focus {
   aspect-ratio: 3 / 4;
   border-radius: 6px;
   overflow: hidden;
+  overflow: clip;
   background: var(--c-bg-sub2);
 }
 .thumb::after,
@@ -1949,6 +1950,7 @@ h2:focus {
   aspect-ratio: 3 / 4;
   border-radius: var(--r-8);
   overflow: hidden;
+  overflow: clip;
   background: var(--c-bg-sub2);
 }
 .pcard__poster .poster {
@@ -2567,6 +2569,7 @@ button.cal__day:hover::before {
   flex-direction: column;
   align-items: center;
   overflow: hidden;
+  overflow: clip;
 }
 .pv-4 { --pv: 4px; }
 .pv-5 { --pv: 5px; }
