@@ -42,6 +42,7 @@
 - 새 GET은 모두 로그인·토큰이 필요 없고 **MySQL만** 씁니다(Redis가 죽어도 동작). 요청 제한은 general 버킷(IP당 분당 120). 정의되지 않은 쿼리 파라미터는 `/api/shows`처럼 400입니다(`/api/banners`는 파라미터를 받지 않음). 응답 헤더(`Cache-Control: no-store` 등)는 v3와 같습니다.
 - 결제는 모의 결제입니다. 고른 수단의 이름만 `reservations.payment_method`에 기록하고 결제 정보는 받지 않습니다. 같은 `Idempotency-Key` 재전송은 처음 응답(처음 고른 수단)을 그대로 돌려줍니다.
 - 스키마 `V4__api_v4_content_ranking_payment.sql`: `shows.tagline VARCHAR(30)`·`shows.region VARCHAR(10)`(+`idx_shows_region`), `reservations.payment_method`(기본 `CARD`, CHECK 3종, 기존 예매는 `CARD`) + `idx_reservations_status_created`, 새 테이블 `banners`(slug 유니크, `show_id` FK, 노출 기간, `image_url`은 `/`로 시작하는 프론트 경로만 CHECK), `notices`(slug 유니크, 분류 CHECK, `show_id` FK NULL 가능).
+- 스키마 `V5__seats_grade_stats_index.sql`: 덮는 인덱스 `seats(performance_id, grade_code, status)` 하나만 추가합니다. 공연 목록·상세·랭킹이 요청마다 하는 회차×등급 좌석 집계가 테이블 대신 인덱스만 읽습니다(EXPLAIN `Using index`). 공연 68개·좌석 39,308석 실측(WSL): 집계 쿼리 40.6 → 26.0ms, `GET /api/shows` 중앙값 51 → 38ms, `/api/shows/1` 49 → 38ms, `/api/rankings` 58 → 45ms. 응답 내용은 전후가 같습니다. 권한 변경은 없습니다(migrate 계정이 만듭니다).
 - **시드**(재실행해도 slug 기준 upsert라 중복 없음, 문구는 모두 새로 씀):
   - 배너 16개: 공연 15, 4, 1, 6, 8, 12, 33, 21, 34, 37, 52, 56, 42, 32, 68, 45 순서(7~16번째는 `docs/next/BANNERS-ADD.md`). `imageUrl` = `/banners/banner-{showId}.webp`, `mobileImageUrl` = null, 노출은 그 공연의 마지막 회차 시작까지.
   - 공지 20건: 오픈 예정 공연(처음 18개 중 6·9·11번 + 추가 50개 중 14개, 모두 17개)마다 `TICKET_OPEN` 1건(공연 연결, 오픈 일시 = 판매 시작 시각) + `SERVICE` 3건(대기열 이용 방법[고정], 결제 수단 안내, 로그인 제한 안내). 기본 size 20이면 1쪽.
@@ -304,7 +305,7 @@ backend/
    │  └─ migrate/       시드·공연장 배치 템플릿(migrate 프로필에서만 로드), v4 문구(ContentSeed: 한 줄 소개·지역·배너·공지)
    ├─ main/resources/
    │  ├─ application.yml, application-migrate.yml
-   │  ├─ db/migration/V1__init.sql, V2__users_and_reservation_owner.sql, V3__db_sessions_and_login_lock.sql, V4__api_v4_content_ranking_payment.sql (Flyway)
+   │  ├─ db/migration/V1__init.sql, V2__users_and_reservation_owner.sql, V3__db_sessions_and_login_lock.sql, V4__api_v4_content_ranking_payment.sql, V5__seats_grade_stats_index.sql (Flyway)
    │  └─ redis/*.lua    queue-common/enter/poll/peek/leave, hold-create/release, login-failure(없는 이메일만), rate-limit
    └─ test/java/com/ticketing/
       ├─ support/       InMemoryStore(가짜 저장소), TestApp(서비스 조립)
