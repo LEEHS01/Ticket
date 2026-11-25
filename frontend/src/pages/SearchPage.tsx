@@ -6,8 +6,9 @@ import { GENRE_LABEL, GENRES } from '../format';
 import { pushRecent } from '../recent';
 import { usePageTitle } from '../shell';
 import { EmptyState, Illust, LoadError } from '../components/bits';
-import { CardGrid, EAGER_COUNT, GridSkeleton, PosterCard, Rail, SectionHead } from '../components/cards';
+import { EAGER_COUNT, GridSkeleton, PosterCard, Rail, SectionHead } from '../components/cards';
 import { Icon } from '../components/Icon';
+import { MoreGrid } from '../components/MoreGrid';
 import { Sheet } from '../components/overlay';
 import { SearchBox } from '../components/SearchBox';
 import { SortSelect } from './sections';
@@ -141,9 +142,13 @@ export function SearchPage() {
                   (results.length === 0 ? (
                     <NoResult q={q} filtered={filterCount > 0 && all.length > 0} onReset={reset} />
                   ) : (
-                    <CardGrid compact label="검색 결과">
-                      {results.map((s, i) => <li key={s.id}><PosterCard show={s} eager={i < EAGER_COUNT} /></li>)}
-                    </CardGrid>
+                    <MoreGrid
+                      compact
+                      items={results}
+                      resetKey={params.toString()}
+                      label="검색 결과"
+                      render={(s, i) => <li key={s.id}><PosterCard show={s} eager={i < EAGER_COUNT} /></li>}
+                    />
                   ))}
               </div>
             </div>

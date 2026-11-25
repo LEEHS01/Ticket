@@ -2616,3 +2616,25 @@ button.cal__day:hover::before {
 .preview__seat.is-aisle {
   margin-right: calc(var(--pv) * 0.75);
 }
+
+/* ── 목록 "더 보기"(카드 격자를 20개씩 펼침) ── */
+.more {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--s-8);
+}
+.more__btn {
+  min-width: 240px;
+}
+.more__rest {
+  color: var(--c-text-3);
+  font-weight: 400;
+}
+@media (max-width: 767px) {
+  .more {
+    margin-top: var(--s-6);
+  }
+  .more__btn {
+    width: 100%;
+  }
+}

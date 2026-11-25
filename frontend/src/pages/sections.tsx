@@ -3,8 +3,9 @@ import { useMemo, useState } from 'react';
 import type { Genre, SaleStatus, ShowSummary } from '../api';
 import { useRanking, type Load } from '../data';
 import { GENRE_LABEL, GENRE_SLUG, GENRES } from '../format';
-import { CardGrid, GridSkeleton, PosterCard, Rail, RailArrows, RailSkeleton, SectionHead, useRail } from '../components/cards';
+import { GridSkeleton, PosterCard, Rail, RailArrows, RailSkeleton, SectionHead, useRail } from '../components/cards';
 import { EmptyState, LoadError } from '../components/bits';
+import { MoreGrid, useHistoryState } from '../components/MoreGrid';
 import { Icon } from '../components/Icon';
 
 export function upcomingOf(shows: ShowSummary[]) {
@@ -141,6 +142,9 @@ const STATUS_FILTERS: { value: SaleStatus | null; label: string }[] = [
   { value: 'CLOSED', label: '판매 종료' },
 ];
 
+const isStatusFilter = (v: unknown): v is SaleStatus | null => v === null || STATUS_FILTERS.some((f) => f.value === v);
+const isSortKey = (v: unknown): v is SortKey => typeof v === 'string' && v in SORT_LABEL;
+
 // ── 전체 목록(상태 칩 + 정렬 + 5열 격자) ──
 export function AllShowsSection({
   shows,
@@ -153,8 +157,9 @@ export function AllShowsSection({
   genre: Genre | null;
   title: string;
 }) {
-  const [status, setStatus] = useState<SaleStatus | null>(null);
-  const [sort, setSort] = useState<SortKey>('date');
+  // 상태 칩·정렬·펼친 개수는 방문 기록에 둔다(공연 상세에 갔다가 뒤로 오면 그대로)
+  const [status, setStatus] = useHistoryState<SaleStatus | null>('status', null, isStatusFilter);
+  const [sort, setSort] = useHistoryState<SortKey>('sort', 'date', isSortKey);
   const base = useMemo(() => (shows.kind === 'ready' ? shows.data.filter((s) => !genre || s.genre === genre) : []), [shows, genre]);
   const list = useMemo(() => {
     // '판매 중'에는 매진도 넣는다(판매 기간 안의 공연)
@@ -184,11 +189,12 @@ export function AllShowsSection({
             <p>다른 판매 상태를 골라 보세요.</p>
           </EmptyState>
         ) : (
-          <CardGrid label={title}>
-            {list.map((s) => (
-              <li key={s.id}><PosterCard show={s} /></li>
-            ))}
-          </CardGrid>
+          <MoreGrid
+            items={list}
+            resetKey={`${status ?? 'ALL'}|${sort}`}
+            label={title}
+            render={(s) => <li key={s.id}><PosterCard show={s} /></li>}
+          />
         ))}
     </section>
   );
